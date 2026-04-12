@@ -171,6 +171,28 @@ fn describeAll<T: Describe>(items: [T]) -> str {
 Generic code is type checked once and specialised for each type it is used with, so it costs the same as writing it
 by hand. Traits can be implemented for your types and for built-in ones (`impl Describe for int`).
 
+## Functions as values
+
+Function types are written `fn(A, B) -> R` (`fn(A)` returns nothing). Lambdas capture what they read, by value:
+
+```quartz
+fn map<T, U>(xs: [T], f: fn(T) -> U) -> [U] {
+    var out: [U] = []
+    for x in xs {
+        out.push(f(x))
+    }
+    return out
+}
+
+fn adder(k: int) -> fn(int) -> int {
+    return (x) => x + k
+}
+```
+
+`map([1, 2, 3], (n) => "#{adder(3)(n)}")` gives `["#4", "#5", "#6"]`: the lambda's parameter type comes from where it is
+used. A named function is a value too (`map(xs, double)`). A lambda cannot assign what it captured, and a captured
+`var` cannot be reassigned afterwards. Functions cannot be stored in a `state` or passed to the host.
+
 ## Packages and imports
 
 A file starts with its package, a reverse-domain name: `package org.example.shop`. Names are private to their file

@@ -5,7 +5,7 @@
 The first version: the whole language of the current specification, both execution tiers and the tools.
 
 - **Language:** static types with inference; `int`, `float`, `byte` and fixed-width numbers; structs, enums with data
-  and exhaustive `match`; null safety; `Result` and `?`; generics with traits; packages with reverse-domain names and
+  and exhaustive `match`; null safety; `Result` and `?`; generics with traits; functions as values and lambdas; packages with reverse-domain names and
   visibility; `state` with versions, renames, migrations and per-handle instances; coroutines (`suspend fn`, `wait`,
   `every`, `at`, `scope`); attributes for hosts (`@on`, `@command`, `@requires`, `@property`, `@handle`,
   `@awaitable`, `@repr(C)`) and for tools (`@test`, `@deprecated`, `@inline`, `@noinline`).
@@ -23,7 +23,7 @@ The first version: the whole language of the current specification, both executi
 
 Each of these is either a change that would break programs or hosts later, or something a stable release needs:
 
-1. **Language surface frozen:** lambdas, complete traits (`Eq`, `Hash`, `Ord`, `Show`, `@derive`), full pattern
+1. **Language surface frozen:** complete traits (`Eq`, `Hash`, `Ord`, `Show`, `@derive`), full pattern
    matching, iterators. These change how code is written, so they come before stability is promised.
 2. **Standard library shape:** the essential library (text, lists, random numbers, the rest of `math`) and the packages
    beyond it (typed configuration, `Decimal`, `Duration`, cryptography, collections), with names that will not change.
