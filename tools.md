@@ -11,6 +11,7 @@
 | `quartz interface <package.qzb>` | Print the `.qzi` other packages compile against |
 | `quartz keygen <seed file>` | Create an Ed25519 signing key; prints the public key |
 | `quartz new <org.example.name>` | Start a package |
+| `quartz repl` | Interactive prompt: expressions print their value; declarations, imports and `state` carry over |
 | `quartz doc <files or folder> [-o api.md]` | Markdown reference of the public declarations and their `///` comments |
 | `quartz fmt [--check] <files or folders>` | Format in place, or list unformatted files |
 | `quartz ir`, `quartz dis` | Print the IR or the bytecode |
