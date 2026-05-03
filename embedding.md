@@ -119,6 +119,30 @@ parameter `quartz::vm::HostCall&` gives access to the call: `call.charge(units)`
 `sandbox.bind("name", fn, user)` binds a raw `bool (*)(vm::HostCall&, void*)`, for handles and anything the typed form
 does not cover. Every import must be bound before `start()`.
 
+### Capabilities of the standard library
+
+Two standard functions stand for capabilities only the host can grant, and come bound to a safe default: binding the
+same name again replaces it.
+
+| Import | Default | Arguments, in slots |
+|---|---|---|
+| `org.quartzlang.log.emit(level: int, logger: str, message: str, fields: [str])` | drops the record | level 0 (trace) to 4 (error); `fields` alternates key and value |
+| `org.quartzlang.http.send(request: Request) -> Result<Response, str>` | `Err("http: this host does not grant network access")` | the fields of `Request` in order: url, method, headers (`[(str, str)]`), body (`Bytes?`, null pointer when absent), timeoutMillis; the result goes to `call.out`: tag 0 and status, headers list, body, or tag 1 and the message |
+
+```cpp
+bool logToServer(quartz::vm::HostCall& call, void*) {
+    auto text = [](const quartz::vm::Slot& s) { return static_cast<const quartz::vm::Str*>(s.p)->view(); };
+    myLogger(call.args[0].i, text(call.args[1]), text(call.args[2]));
+    return true;
+}
+
+sandbox.bind("org.quartzlang.log.emit", logToServer);
+```
+
+A server should not block its tick on HTTP: run the plugin call that sends on a worker, or answer `send` from a cache
+and let a task poll. Unused capabilities cost nothing, since the compiler drops the standard functions a program does
+not reach.
+
 ## Tasks
 
 `suspend fn` calls run as tasks:
