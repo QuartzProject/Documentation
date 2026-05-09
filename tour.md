@@ -34,7 +34,19 @@ fn main() -> int {
 }
 ```
 
-Strings interpolate any expression between braces: `"{a + b}"`. A literal brace is `\{`.
+Strings interpolate any expression whose type implements `Show` between braces: `"{a + b}"`. A literal brace is
+`\{`. After a colon comes a format: `[[fill]align][+][0][width][.precision][x|X|b|o]`, as in Rust and Python.
+
+```quartz
+fn main() -> int {
+    let price = 3.14159
+    print("[{price:.2}] [{42:>6}] [{42:06}] [{255:x}] [{"ok":-^6}]") // [3.14] [    42] [000042] [ff] [--ok--]
+    return 0
+}
+```
+
+Numbers align right and everything else left unless the format says otherwise. Floats round half to even on their
+exact value, so the same format prints the same text on every platform.
 
 ## Functions
 
@@ -86,6 +98,26 @@ fn area(s: Shape) -> float {
 ```
 
 `match` must cover every variant; the compiler names the missing ones. Variants are built with `Shape.Circle(1.0)`.
+
+Patterns nest, and also take apart tuples and structs (`Point(x, y)`, in field order); literals, ranges such as
+`1..=9` and `null` fit anywhere inside, and an arm can add a guard with `if`. The compiler checks the whole tree, so
+`Node(Rect(_, _), _)` is reported when nothing covers it.
+
+```quartz
+fn describe(pair: (Shape, int?)) -> str {
+    return match pair {
+        (Circle(r), _) if r > 10.0 => "a big circle"
+        (Circle(_), null) => "a circle"
+        (Circle(_), n) => "a circle, {n}"
+        (Rect(w, h), _) => "{w}x{h}"
+        (Empty, _) => "nothing"
+    }
+}
+```
+
+`let (a, b) = pair` and `let Point(x, y) = p` destructure where the pattern cannot fail. `value is Pattern` tests a
+pattern anywhere, and in an `if` condition (alone or joined with `&&`) its names are bound inside the block:
+`if s is Circle(r) && r > 1.0 { ... }`.
 
 ## Null safety
 
@@ -144,7 +176,20 @@ let three = scores.get("ada") ?? 0
 ```
 
 Lists have `len`, `push`, `pop`, `clear` and indexing (out of range is a trap); lists of `str` have `join`. Maps have
-`len`, `get` (which returns `V?`), `set`, `has`, `remove` and indexing.
+`len`, `get` (which returns `V?`), `set`, `has`, `remove`, `keys`, `values` and indexing. Keys are integers, `bool`,
+`char`, `str`, handles, tuples of them, or structs and enums that derive `Eq` and `Hash`.
+
+```quartz
+for k, v in scores {    // insertion order, the same in every run
+    print("{k}: {v}")
+}
+for c in "héllo" {      // chars; invalid UTF-8 from a host reads as U+FFFD
+    print("{c}")
+}
+```
+
+`for i, x in list` gives the index too, and `for i, c in text` the byte offset. Adding or removing a key while a
+`for` walks the map stops the program with a trap; changing the value of a key is fine.
 
 ## Generics and traits
 
@@ -169,7 +214,25 @@ fn describeAll<T: Describe>(items: [T]) -> str {
 ```
 
 Generic code is type checked once and specialised for each type it is used with, so it costs the same as writing it
-by hand. Traits can be implemented for your types and for built-in ones (`impl Describe for int`).
+by hand. Traits can be implemented for your types and for built-in ones (`impl Describe for int`). A trait method
+with a body is a default that an `impl` may leave out, and generic types can bound their parameters
+(`struct Sorted<T: Ord>`).
+
+Four traits belong to the language: `Eq` (`==`), `Ord` (`<` and `cmp`, which returns -1, 0 or 1), `Show`
+(interpolation) and `Hash` (map keys). Built-in types already have them; your types derive them:
+
+```quartz
+@derive(Eq, Hash, Ord, Show)
+struct Version {
+    major: int
+    minor: int
+}
+```
+
+Derived methods compare fields in declaration order (variants in declaration order first, then their payloads) and
+show `Version(major=1, minor=2)`. `Eq`, `Ord` and `Show` can also be written by hand; `Hash` is always derived,
+together with `Eq`. A type that implements `Iterator` with `fn next(self) -> (T, Self)?` (the next item and the
+advanced iterator, or `null`) works in `for`.
 
 ## Functions as values
 
