@@ -200,6 +200,62 @@ Messages take their arguments as a `Map<str, Value>` and support `{name}`, `{n, 
 `'{'`). Plural rules are CLDR's for English, Spanish, French, German, Russian and Arabic; other languages only have
 `other`. Numbers print as Quartz prints them, without grouping.
 
+## `org.quartzlang.regex`
+
+Regular expressions in a subset of RE2 syntax, matched in time linear in the text for **every** pattern: there is no
+backtracking, so a hostile pattern or text cannot stall the host. That is also why there are no backreferences and no
+lookaround; both make matching non-linear, and patterns that use them are rejected with an error.
+
+| Function | |
+|---|---|
+| `compileRegex(pattern) -> Result<Regex, str>` | the error names the problem and its byte position, `missing ')' at position 3` |
+| `r.isMatch(text)` | a match anywhere in `text` |
+| `r.fullMatch(text)` | a match of the whole of `text` |
+| `r.find(text) -> Match?` | the leftmost match |
+| `r.findAll(text) -> [Match]` | every match, left to right, without overlaps |
+| `r.replace(text, replacement)`, `r.replaceAll(text, replacement)` | `$1` or `${1}` by number, `${name}` by name, `$0` the whole match, `$$` a dollar |
+| `r.split(text, limit = 0)` | the pieces between matches; at most `limit` pieces when positive |
+| `r.groupCount()` | capturing groups, not counting the whole match |
+| `escapeRegex(text)` | a pattern that matches exactly `text` |
+| `m.start`, `m.end`, `m.text` | byte offsets into the text (what `slice` takes) and the matched text |
+| `m.group(i) -> str?`, `m.named(name) -> str?`, `m.span(i) -> (int, int)?` | null for a group that took no part; an index or name the pattern lacks panics |
+
+```quartz
+let mention = compileRegex("@(?P<user>\\w\{3,16})").unwrap()
+for m in mention.findAll("hi @ada and @bob_7") {
+    print(m.named("user") ?? "")                                // ada, then bob_7
+}
+let dates = compileRegex("(\\d+)/(\\d+)/(\\d+)").unwrap()
+print(dates.replaceAll("due 3/14/2026", "$3-$1-$2"))            // due 2026-3-14
+```
+
+**Syntax.** Literals and `\` escapes of punctuation; `\n \r \t \f \v \a`, `\xHH` and `\x{H...}`; `.` (any character but
+`\n`); classes `[a-z]`, `[^...]` with ranges and `\d \w \s` inside; `\d \w \s \D \W \S`; `^ $ \A \z \b \B`; groups
+`(...)`, `(?:...)`, `(?P<name>...)` and `(?<name>...)`; `|`; `* + ? {n} {n,} {n,m}` and their lazy forms with a
+trailing `?`; flags `(?i)`, `(?m)`, `(?s)`, combined and negated (`(?i-s)`), for the rest of the group or scoped as
+`(?i:...)`. Repetition counts go up to 1000, groups nest up to 200 deep, and a pattern compiles to at most 50 000
+instructions; anything bigger is a compile error, not a slow match.
+
+**Characters.** Matching works on code points of the UTF-8 text, so `.` and `[^a]` take a whole `é` or emoji, and
+classes may hold any code points (`[à-ü]`). `\d`, `\w`, `\s` and `\b` are ASCII only (`\s` is space, `\t \n \v \f
+\r`), and `(?i)` folds ASCII letters only, so `(?i)é` does not match `É`; as with `lower` and `upper`, rules that
+depend on a language are left out.
+
+**Semantics.** Matches are leftmost, and among the matches that start there the first alternative and the greedier
+repeat win, as in Perl, Python and RE2. Without `(?m)`, `$` matches only at the very end, as in RE2; Python's `$`
+also matches before a final `\n`. `findAll`, `replaceAll` and `split` iterate as Python 3.7 and later do: an empty
+match right after another match counts (`a*` on `baaa` gives `""`, `"aaa"`, `""`, while RE2 and Go skip the last one).
+`split` does not add the groups to the result, unlike Python's. When a repeat's last iteration matches empty, the
+groups inside it keep the values of the iteration before, as in RE2: `(a|)+b` on `aab` gives group 1 `a`, Python `""`.
+`{,n}` is a literal, as in RE2; Python reads it as `{0,n}`.
+
+**Cost.** Each call charges fuel for the instructions it simulates per character, about one unit each, and the
+prefilter that jumps to a required first byte or literal prefix charges a fraction of a unit per byte it skips.
+Compiled patterns are cached per sandbox (64 at most) and their memory counts against the sandbox's quota; a pattern is
+compiled, and charged for it, the first time it is used after the cache lost it. A `Regex` is only its pattern text and
+group names, so it can be kept in a `state`, saved and reloaded; a `Regex` built by hand around an invalid pattern
+traps when used.
+
 ## `org.quartzlang.formats`
 
 | Read | Write |

@@ -17,8 +17,9 @@ The first version: the whole language of the current specification, both executi
 - **Library:** `org.quartzlang.data` (JSON, TOML, YAML), `bytes` (with readers, writers and varints), `compress`
   (deflate, zlib, gzip, zstd), `zip`, `math`, `random`, `crypto` (SHA-2, HMAC, BLAKE2b, Ed25519, Argon2id),
   `encoding` (base64, hex, UUID), `time` (durations, instants, cron), `decimal`, `text` (globs, edit distance, ICU-style
-  messages with plurals), `formats` (CSV, properties, MessagePack), `geometry`, `noise`, `semver`, and the `http` and
-  `log` shapes over host capabilities; checked and saturating arithmetic on every integer type.
+  messages with plurals), `regex` (linear-time regular expressions), `formats` (CSV, properties, MessagePack),
+  `geometry`, `noise`, `semver`, and the `http` and `log` shapes over host capabilities; checked and saturating
+  arithmetic on every integer type.
 - **Tools:** `quartz` (check, run, test, build, new, interface, fmt), `quartz-lsp`, a VS Code extension, a tree-sitter
   grammar for Neovim, Helix and Zed.
 - **Platforms:** Linux x86-64 and arm64, Windows x64; macOS and FreeBSD written but not verified yet.
