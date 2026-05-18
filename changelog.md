@@ -13,7 +13,8 @@ The first version: the whole language of the current specification, both executi
   with the same results, tiered in the background, with an on-disk cache; fuel, memory quotas and recursion limits that
   are always on; arenas instead of a garbage collector; deterministic floats and math.
 - **Hosts:** a C++ API with typed bindings, a C API and `libquartz`; signed `.qzb` modules; hot reload with state
-  migration; packages linked across sandboxes with structs and lists copied between them; sandboxes on many threads.
+  migration; packages linked across sandboxes with structs, lists and maps copied between them; sandboxes on many
+  threads.
 - **Library:** `org.quartzlang.data` (JSON, TOML, YAML), `bytes` (with readers, writers and varints), `compress`
   (deflate, zlib, gzip, zstd), `zip`, `math`, `random`, `crypto` (SHA-2, HMAC, BLAKE2b, Ed25519, Argon2id),
   `encoding` (base64, hex, UUID), `time` (durations, instants, cron), `decimal`, `text` (globs, edit distance, ICU-style

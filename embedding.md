@@ -92,8 +92,9 @@ impl int {
 - A `@handle` struct is an opaque host object: the program holds a 64-bit value it cannot forge into memory access.
 - `@property` methods are read as fields (`p.health`). A matching `setX` method makes the property assignable
   (`p.health = 10`).
-- `@awaitable(T)` makes a handle something `wait` accepts; `wait` produces a `T` (a scalar, `str`, handle or list such
-  as `@awaitable([str])`).
+- `@awaitable(T)` makes a handle something `wait` accepts; `wait` produces a `T`, any value the host can build: scalars,
+  `str`, handles, lists, maps, structs, tuples, enums and nullables. Attribute arguments are expressions, so the type is
+  written as one: `@awaitable([str])`, `@awaitable((int, str)?)`, `@awaitable(Map::<str, int>)`.
 - Methods are bound by their full name: `Player.health`, `int.ticks`.
 
 ## Limits
@@ -155,8 +156,11 @@ while (t && t->kind != quartz::vm::TaskOutcome::Kind::Done) {
 }
 ```
 
-A host usually keeps waiting tasks in its scheduler and resumes them later; `cancel` frees one. To answer a `wait` with
-a list, build it with `sandbox.hostList(sandbox.waitType(task))` and `hostListPush`.
+A host usually keeps waiting tasks in its scheduler and resumes them later; `cancel` frees one. `sandbox.waitType(task)`
+is the type the `wait` produces: build a list with `hostList` and `hostListPush`, a map with `hostMap` and `hostMapSet`,
+and pass a struct, tuple, enum or nullable as its slots to `resume(task, std::span<const Slot>)`. The value is copied
+into the task, so the host's copy only has to live until `resume` returns. `hostMapEntry` (in insertion order) and
+`hostMapGet` read maps a program returns.
 
 ## Persistence and reload
 
@@ -170,8 +174,8 @@ a list, build it with `sandbox.hostList(sandbox.waitType(task))` and `hostListPu
 
 A package lists its exported functions in `package.toml`; `quartz interface package.qzb` generates the `.qzi` that
 other packages compile against, including the structs and enums its functions use. At run time,
-`client.link("org.example.economy", provider)` binds the client's imports to the provider's sandbox. Values are copied
-both ways, never shared, and each side spends its own fuel and memory.
+`client.link("org.example.economy", provider)` binds the client's imports to the provider's sandbox. Values (lists, maps,
+structs, tuples and enums included) are copied both ways, never shared, and each side spends its own fuel and memory.
 
 `quartz::loadPackage(bytes, policy)` loads a `.qzb` only if it is signed by the key the host trusts for that package
 name.
@@ -193,7 +197,9 @@ if (qz_sandbox_call(sandbox, qz_program_function(program, "welcome"), &arg, 1, &
 ```
 
 Host functions receive a `qz_call*`: `qz_call_args`, `qz_call_set_result`, `qz_call_str`, `qz_call_charge` and
-`qz_call_fail`. Memory the library returns is freed with `qz_free`.
+`qz_call_fail`. Memory the library returns is freed with `qz_free`. Lists are built with `qz_sandbox_list` and
+`qz_list_push`, maps with `qz_sandbox_map` and `qz_map_set` and read with `qz_map_length`, `qz_map_entry` and
+`qz_map_get`; `qz_sandbox_resume_wide` answers a `wait` that produces a value wider than one slot.
 
 ## Threads
 
