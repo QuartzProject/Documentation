@@ -219,7 +219,8 @@ with a body is a default that an `impl` may leave out, and generic types can bou
 (`struct Sorted<T: Ord>`).
 
 Four traits belong to the language: `Eq` (`==`), `Ord` (`<` and `cmp`, which returns -1, 0 or 1), `Show`
-(interpolation) and `Hash` (map keys). Built-in types already have them; your types derive them:
+(interpolation) and `Hash` (map keys). Built-in types already have them (lists compare element by element and
+lexicographically, maps show as `{k=v, k2=v2}` in insertion order); your types derive them:
 
 ```quartz
 @derive(Eq, Hash, Ord, Show)
