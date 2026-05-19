@@ -233,7 +233,8 @@ struct Version {
 Derived methods compare fields in declaration order (variants in declaration order first, then their payloads) and
 show `Version(major=1, minor=2)`. `Eq`, `Ord` and `Show` can also be written by hand; `Hash` is always derived,
 together with `Eq`. A type that implements `Iterator` with `fn next(self) -> (T, Self)?` (the next item and the
-advanced iterator, or `null`) works in `for`.
+advanced iterator, or `null`) works in `for`, and so does a type with a method `fn iter(self)` that returns one (or a
+list, map or `str`): `for x in c` loops over `c.iter()`.
 
 ## Functions as values
 
