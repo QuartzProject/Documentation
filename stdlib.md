@@ -48,6 +48,42 @@ var rng = Random(42)
 let roll = rng.nextInt(6) + 1     // also nextLong(), nextIntIn(from, until), nextFloat(), nextBool(), shuffle(list)
 ```
 
+## `org.quartzlang.collections`
+
+| Type | What it is | Main methods |
+|---|---|---|
+| `Set<T: Hash>` | insertion-ordered set | `add`, `remove`, `contains`, `union`, `intersect`, `difference`, `symmetricDifference`, `isSubsetOf`, `isDisjoint`, `copy` |
+| `SortedMap<K: Ord, V>` | map in key order | `get`, `set`, `has`, `remove`, `first`, `last`, `floor`, `ceiling`, `lower`, `higher`, `popFirst`, `range(from, until)`, `rangeFrom`, `rangeUntil` |
+| `SortedSet<T: Ord>` | set in order | the same queries, on elements |
+| `PriorityQueue<T: Ord>` | binary min-heap | `push`, `pop`, `peek`, `toSortedList` |
+| `PriorityQueueBy<T>` | the same, ordered by a function | built with `PriorityQueueBy::<Job>((a, b) => a.due - b.due)` |
+| `Deque<T>` | ring buffer | `pushBack`, `pushFront`, `popBack`, `popFront`, `first`, `last`, `get`, `set` |
+| `LruCache<K: Hash, V>` | the `capacity` most recently used entries | `get` (makes the entry the newest), `peek`, `set` (returns the evicted entry), `remove` |
+| `BitSet` | set of non-negative integers | `set`, `unset`, `flip`, `get`, `count`, `nextSet`, `highest`, `union`, `intersect`, `difference` |
+
+Each has `len()`, `isEmpty()`, `clear()` and works in `for`: sets and sorted sets give their elements, sorted maps and
+caches `(key, value)` tuples (in key order, or from the newest entry), deques front to back and bit sets their bits from
+the lowest. `range` and the other ranges are iterators too. Adding or removing elements while a `for` walks one of them
+stops the program with a trap, as with maps. `setOf(list)` and `sortedSetOf(list)` build sets; the others start empty
+(`Deque::<int>()`, `LruCache::<str, int>(100)`). They implement `Eq` and `Show` when their elements do.
+
+These types are structs that hold lists and maps, so a copy shares the elements: after `let b = a`, `b.add(x)` also
+changes `a`. `copy()` on a set gives an independent one. `PriorityQueueBy` holds a function, so it cannot be stored
+in a `state`.
+
+```quartz
+import org.quartzlang.collections.*
+
+let scores = SortedMap::<int, str>()
+scores.set(120, "ada")
+scores.set(95, "bo")
+for e in scores.rangeFrom(100) {
+    let (points, name) = e
+    print("{name}: {points}")
+}
+let best = scores.last()          // (120, ada)
+```
+
 ## `org.quartzlang.data`
 
 One tree for every format:
