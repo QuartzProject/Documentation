@@ -6,6 +6,8 @@
 |---|---|
 | `quartz check <files or folder>` | Type check and validate; prints errors and warnings |
 | `quartz run <files or .qzb> [--entry name]` | Run `main` (or `--entry`) with `print` and `n.ticks` available |
+| `quartz run ... --profile [--profile-out out.json]` | Run and report calls, fuel and time per function and per call path |
+| `quartz debug --dap` | The debugger: speaks the Debug Adapter Protocol on standard input and output for an editor |
 | `quartz test <files or folder> [--filter text]` | Run every `@test` function, each in a fresh sandbox |
 | `quartz build <files or folder> -o out.qzb [--sign seed] [--strip-lines]` | Build a validated module; a folder brings its `package.toml` |
 | `quartz interface <package.qzb>` | Print the `.qzi` other packages compile against |
@@ -21,6 +23,60 @@
 | `quartz ir`, `quartz dis` | Print the IR or the bytecode |
 
 `run` and `ir` also accept `--trust <public key>` and `--require-signature` to load only signed modules.
+
+## Debugging
+
+`quartz debug --dap` is a debug adapter: editors start it and talk the
+[Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/) to it over standard input and output.
+The VS Code extension and the JetBrains plugin use it; any editor with a DAP client can too. A `launch` request
+takes:
+
+| Attribute | |
+|---|---|
+| `program` | A `.qz` file, a package folder (with its dependencies and plugins, as `quartz run` does) or a `.qzb` module |
+| `entry` | The function to run, `main` by default |
+| `tests` | `true` runs every `@test` function, each in a fresh sandbox, instead of `entry` |
+| `filter` | With `tests`: only the tests whose name contains this text |
+| `stopOnEntry` | Stop at the first line that runs |
+
+What it does:
+
+- **Breakpoints** on lines. A line without code moves the breakpoint to the next line that has some. A breakpoint
+  can carry a condition: a variable, a field path or an index (`p.x`, `xs[2]`, `m["key"]`) alone (it must be
+  `true`), or compared with `==`, `!=`, `<`, `<=`, `>` or `>=` to a literal or another variable (`i == 3`,
+  `total > limit`).
+- **Stepping**: over, into, out of a call, and pause.
+- **Call stack** with the function, file and line of every frame.
+- **Variables**: arguments and locals in scope at the stopped line, with their types. Structs, tuples, lists, maps,
+  enums with data, nullables and `state` values expand. Hovering a name (or a path like `p.x`) shows its value.
+- **Traps** stop the program where they happen, with the whole stack and its variables still there; the trap and its
+  trace show as the exception. Continuing ends the program as `quartz run` would.
+- `print` and the log go to the debug console.
+
+The program runs in the interpreter, compiled with a probe at the start of every line, without the IR optimizer and
+without fused instructions, so every local keeps its own register. A normal build has no probes and pays nothing for
+the debugger. The names of locals and their scopes travel in the line table of a `.qzb` (`--strip-lines` drops both),
+so a module built without `--strip-lines` can be debugged with names. The program is one thread, named after the
+entry function or the test that is running.
+
+## Profiling
+
+`quartz run --profile` runs the program with a probe at the entry of each function and before each return, and
+prints, after it ends:
+
+- per function: calls, fuel spent in the function itself and in total with what it called, and the same for wall
+  time;
+- the call tree with total fuel, its share and calls per path (paths under 0.5% are left out).
+
+Fuel is the unit a host budgets a call in (one unit per call made and per loop iteration, plus the bytes that string
+and list operations touch), and it is exact: the same program with the same input always gives the same numbers, so a
+change can be judged without timing noise. Wall time includes the probes' own cost, so it is a guide, not a
+measurement. `--profile-out profile.json` also writes the tree as a [speedscope](https://www.speedscope.app) file
+with a fuel and a time view.
+
+A host gets the same from its own sandboxes: compile with `CompileOptions::probes.calls = true` (or pass
+`{.calls = true}` to `quartz::load`), attach a `vm::Profiler` to the sandbox, and read `functions()`, `tree()`,
+`report()` or `speedscope()`. `Sandbox::setProbe` is the lower level hook both tools are built on.
 
 ## Documentation comments
 
@@ -72,5 +128,6 @@ names from other packages, adding the `import`), formatting, and the editor feat
 
 ## VS Code
 
-`editors/vscode` holds the extension: syntax highlighting for `.qz` and `.qzi`, and the language server, found on the
-`PATH` or set with `quartz.server.path`.
+`editors/vscode` holds the extension: syntax highlighting for `.qz` and `.qzi`, the language server, found on the
+`PATH` or set with `quartz.server.path`, and the debugger, which runs `quartz debug --dap` (`quartz` on the `PATH` or
+set with `quartz.cli.path`). F5 on a `.qz` file debugs it; `launch.json` offers "Run current file" and "Run tests".
