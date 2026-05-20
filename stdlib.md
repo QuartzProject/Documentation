@@ -109,8 +109,49 @@ pub enum Value {
 | `toJson(value, indent = 0) -> str` | compact, or indented with `indent` spaces |
 | `parseToml(text) -> Result<Value, str>` | TOML 1.0; dates and times come back as `Str` with their text |
 | `parseYaml(text) -> Result<Value, str>` | a defined subset of YAML 1.2: block and flow maps and lists, scalars, multi-line strings, comments |
+| `toJsonOrdered(value, indent = 0) -> str` | like `toJson`, which sorts keys, but in each table's insertion order |
+| `toToml(value) -> Result<str, str>` | a table as TOML: plain keys, then `[tables]` and `[[arrays of tables]]` |
 
 Errors name the line and what was expected.
+
+### Typed data: `Decode` and `Encode`
+
+`@derive(Decode, Encode)` on a struct or enum converts it from and to a `Value`, so a configuration file reads
+straight into typed structs:
+
+```quartz
+import org.quartzlang.data.*
+
+@derive(Decode, Encode)
+struct Config {
+    name: str
+    @key("max-players")
+    maxPlayers: int = 20      // a missing key takes the default
+    motd: str?                // a missing nullable key is null
+    worlds: [World] = []
+}
+
+let config = decodeToml::<Config>(text)   // Result<Config, DecodeError>
+```
+
+| Function | |
+|---|---|
+| `decodeToml<T>(text)`, `decodeJson<T>(text)`, `decodeYaml<T>(text)` | parse and decode; `-> Result<T, DecodeError>` |
+| `decode<T>(value)` | decode a `Value` tree |
+| `encodeJson(x, indent = 0)`, `encodeToml(x) -> Result<str, str>` | the other way, keys in field order |
+| `encode(x) -> Value` | the tree of `x` |
+
+Fields can be numbers (integers are range checked, floats also take integers), `bool`, `str`, `char` (a one-character
+string), `Value` itself (kept as it is), nullables, lists, `Map<str, T>` and other types that derive the same trait.
+Struct fields use their name as the key, or the one `@key("...")` gives; unknown keys are ignored. A missing key takes
+the field's default, or `null` for a nullable field, and is an error otherwise. Encoding writes fields in declaration
+order and leaves null ones out. An enum variant without payload is its name as a string (matched exactly, or else
+ignoring ASCII case); one with a payload is a table with its name as the only key, holding the payload, or a list when
+there are several: `mode = { Custom = [3, "x"] }`.
+
+`DecodeError` has `path` (`worlds[1].seed`, with odd keys quoted: `tags["a b"]`), `expected`, `found` and `line` (0
+when unknown), and shows as `line 6: worlds[1].seed: expected int, found str "seven"`. When the text does not parse,
+`message()` is the parser's error.
 
 ## `org.quartzlang.bytes`
 

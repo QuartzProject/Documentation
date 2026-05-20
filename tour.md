@@ -230,6 +230,9 @@ struct Version {
 }
 ```
 
+`@derive(Decode, Encode)` reads a type from JSON, TOML or YAML and writes it as JSON or TOML (see
+`org.quartzlang.data`).
+
 Derived methods compare fields in declaration order (variants in declaration order first, then their payloads) and
 show `Version(major=1, minor=2)`. `Eq`, `Ord` and `Show` can also be written by hand; `Hash` is always derived,
 together with `Eq`. A type that implements `Iterator` with `fn next(self) -> (T, Self)?` (the next item and the
