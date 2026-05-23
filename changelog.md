@@ -15,7 +15,9 @@ The first version: the whole language of the current specification, both executi
 - **Hosts:** a C++ API with typed bindings, a C API and `libquartz`; signed `.qzb` modules; hot reload with state
   migration; packages linked across sandboxes with structs, lists and maps copied between them; sandboxes on many
   threads.
-- **Library:** `org.quartzlang.data` (JSON, TOML, YAML), `bytes` (with readers, writers and varints), `compress`
+- **Library:** `org.quartzlang.data` (JSON, TOML, YAML, and typed decoding and encoding with
+  `@derive(Decode, Encode)`), `collections` (sets, sorted maps and sets, priority queues, deques, LRU caches, bit
+  sets), `bytes` (with readers, writers and varints), `compress`
   (deflate, zlib, gzip, zstd), `zip`, `math`, `random`, `crypto` (SHA-2, HMAC, BLAKE2b, Ed25519, Argon2id),
   `encoding` (base64, hex, UUID), `time` (durations, instants, cron), `decimal`, `text` (globs, edit distance, ICU-style
   messages with plurals), `regex` (linear-time regular expressions), `formats` (CSV, properties, MessagePack),
