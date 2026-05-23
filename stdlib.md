@@ -213,7 +213,7 @@ Argon2's memory counts against the sandbox's quota and its time against the fuel
 `base64Encode(data, urlSafe = false, padding = true)`, `base64Decode(text, urlSafe = false) -> Result<Bytes, str>`
 (padding optional, anything else strict), `hexDecode(text)` (the other way is `data.hex()`).
 
-`Uuid` is a value with `toStr()`, `toBytes()`, `version()`, `equals` and `compareTo`; `parseUuid(text)`,
+`Uuid` is a value with `toStr()`, `toBytes()`, `version()`, `equals` and `compareTo`; `Uuid.parse(text)` (or `parseUuid`),
 `uuidFromBytes(data)`, `uuidV4(random)` from 16 bytes the caller supplies, `uuidV5(namespace, name)` and the constants
 `NAMESPACE_DNS`, `NAMESPACE_URL` and `NIL_UUID`.
 
@@ -225,16 +225,17 @@ either way of 1970; overflowing them is a panic).
 ```quartz
 import org.quartzlang.time
 
-let cooldown = time.parseDuration("1h30m")?      // also 1.5s, 250ms, 2d 4h, -90s; units ns us ms s m h d w
+let cooldown = time.Duration.parse("1h30m")?     // also 1.5s, 250ms, 2d 4h, -90s; units ns us ms s m h d w
 let later = now.plus(cooldown)                    // now: an Instant from the host, e.g. time.fromEpochMillis(ms)
 print("{cooldown.toStr()} {later.toStr()}")      // 1h30m 2026-11-19T16:10:00Z
-let daily = time.parseCron("0 4 * * *")?
+let daily = time.Cron.parse("0 4 * * *")?
 let next = daily.next(now)                        // Instant?, in UTC
 ```
 
+Each of these types also has the free `parseX` function under its old name (`parseDuration`, `parseCron`...).
 `Duration`: `nanos(n)`, `micros`, `millis`, `seconds`, `minutes`, `hours`, `days`; `plus`, `minus`, `times`, `div`,
 `negate`, `abs`, `compareTo`, `toSeconds()` and friends, `toStr()`. `Instant`: `fromEpochMillis`, `fromEpochSeconds`,
-`fromEpochNanos`, `instantOf(year, month, day, hour, minute, second, nano)`, `parseInstant` (RFC 3339); `plus`,
+`fromEpochNanos`, `instantOf(year, month, day, hour, minute, second, nano)`, `Instant.parse` (RFC 3339); `plus`,
 `minus`, `since`, `isBefore`, `utc() -> DateTime`, `toStr()` (RFC 3339 in UTC).
 
 Cron expressions are the classic five fields of Vixie cron (minute, hour, day of month, month, day of week) with `*`,
@@ -250,7 +251,7 @@ rounds unless asked, and then the rounding is explicit.
 ```quartz
 import org.quartzlang.decimal.*
 
-let price = parseDecimal("19.99")?
+let price = Decimal.parse("19.99")?
 let total = price.times(decimalOf(3))                         // 59.97
 let each = total.div(decimalOf(7), 2, Rounding.HalfEven)      // 8.57
 ```
@@ -355,12 +356,12 @@ the same seed gives the same values everywhere.
 
 ## `org.quartzlang.semver`
 
-`parseSemver(text) -> Result<Semver, str>` and `Semver` with `toStr`, `compareTo`, `equals` and
+`Semver.parse(text) -> Result<Semver, str>` and `Semver` with `toStr`, `compareTo`, `equals` and
 `satisfies(range) -> Result<bool, str>`, with the same rules as `package.toml` (`^1.2`, `~1.4`, `>=1.0, <2`, `*`).
 
 ## `org.quartzlang.http` and `org.quartzlang.log`
 
-`parseUrl(text) -> Result<Url, str>` splits a URL (RFC 3986) and `url.toStr()` puts it back; `percentEncode`,
+`Url.parse(text) -> Result<Url, str>` splits a URL (RFC 3986) and `url.toStr()` puts it back; `percentEncode`,
 `percentDecode`, `encodeQuery([(name, value)])` and `decodeQuery(text)` handle the escaping. `Request` (url, method,
 headers, body, timeout) and `Response` (status, headers, body; `header(name)`, `text()`, `json()`) describe an
 exchange, and `send(request) -> Result<Response, str>` runs it **through the host**: Quartz has no network, so a host
