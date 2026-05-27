@@ -59,6 +59,14 @@ fn greet(name: str, punctuation: str = "!") -> str {
 Parameters can have defaults, and arguments can be named: `greet("Bo", punctuation = "?")`. A function without
 `-> Type` returns nothing.
 
+A `const` is computed by the compiler: its value may use literals, arithmetic, comparisons, `+` on strings, `as`
+between numbers, other constants and constructors of structs, tuples, enum variants and fixed-size arrays, but no
+function calls, lists or maps (`const Area = Side * Side` is fine, `const Now = clock()` is an error).
+
+The compiler also warns about unused variables, parameters, imports and private functions, a `Result` that is
+dropped, a local that hides another one and `match` arms that can never run; a name that starts with `_` is never
+reported as unused. `quartz check --deny-warnings` fails on any warning.
+
 ## Structs and methods
 
 ```quartz
@@ -77,7 +85,19 @@ impl Point {
 ```
 
 `Point(3.0, 4.0).length()` is `5.0`. Structs are values: assigning one copies it. Fields can have defaults, and a
-constructor call can name its fields like any other call.
+constructor call can name its fields like any other call. `p with { x = 0.0 }` is a copy of `p` with some fields
+changed; several go on one line separated by commas, or one per line.
+
+A function in an `impl` block without `self` belongs to the type and is called through its name, also from another
+package (`Point.origin()`, `time.Duration.parse("90s")`):
+
+```quartz
+impl Point {
+    fn origin() -> Point {
+        return Point(0.0, 0.0)
+    }
+}
+```
 
 ## Enums and match
 
@@ -186,6 +206,17 @@ for k, v in scores {    // insertion order, the same in every run
 for c in "héllo" {      // chars; invalid UTF-8 from a host reads as U+FFFD
     print("{c}")
 }
+```
+
+A fixed-size array `[T; N]` is a value like a struct: its N elements are stored inline, it is copied on assignment,
+and an element can only be changed through a `var`. N is a constant expression. Indexing out of range is a trap,
+`len()` is N, `toList()` copies it into a list, `for` walks it, and arrays can be fields of `@repr(C)` structs, where
+they have the C layout (`[i32; 4]` is `int32_t a[4]`).
+
+```quartz
+var cells: [int; 4] = [0; 4]
+cells[2] = 7
+let corners: [float; 2] = [1.0, 2.5]
 ```
 
 `for i, x in list` gives the index too, and `for i, c in text` the byte offset. Adding or removing a key while a
