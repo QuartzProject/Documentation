@@ -5,7 +5,8 @@
 The first version: the whole language of the current specification, both execution tiers and the tools.
 
 - **Language:** static types with inference; `int`, `float`, `byte` and fixed-width numbers; structs, enums with data
-  and exhaustive `match`; null safety; `Result` and `?`; generics with traits; functions as values and lambdas; packages with reverse-domain names and
+  and exhaustive `match`; null safety; `Result` and `?`; generics with traits; functions as values and lambdas; fixed-size arrays `[T; N]`; `value with { field = x }`
+  updates; constants evaluated at compile time; functions of a type called through its name (`Duration.parse`); packages with reverse-domain names and
   visibility; `state` with versions, renames, migrations and per-handle instances; coroutines (`suspend fn`, `wait`,
   `every`, `at`, `scope`); attributes for hosts (`@on`, `@command`, `@requires`, `@property`, `@handle`,
   `@awaitable`, `@repr(C)`) and for tools (`@test`, `@deprecated`, `@inline`, `@noinline`).
@@ -23,7 +24,8 @@ The first version: the whole language of the current specification, both executi
   messages with plurals), `regex` (linear-time regular expressions), `formats` (CSV, properties, MessagePack),
   `geometry`, `noise`, `semver`, and the `http` and `log` shapes over host capabilities; checked and saturating
   arithmetic on every integer type.
-- **Tools:** `quartz` (check, run, test, build, new, interface, fmt), `quartz-lsp`, a VS Code extension, a tree-sitter
+- **Tools:** compiler warnings for unused names, dropped results, shadowed locals and unreachable `match` arms
+  (`quartz check --deny-warnings`); `quartz` (check, run, test, build, new, interface, fmt), `quartz-lsp`, a VS Code extension, a tree-sitter
   grammar for Neovim, Helix and Zed.
 - **Platforms:** Linux x86-64 and arm64, Windows x64; macOS and FreeBSD written but not verified yet.
 
