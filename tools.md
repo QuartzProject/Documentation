@@ -113,7 +113,7 @@ derives from it.
 `check`, `build`, `test` and `run` on a folder use its dependencies: they read `quartz.lock` (or resolve and write it
 the first time), take the archives from the cache (fetching and verifying what is missing), add library sources and
 plugin interfaces to the compile, and `run` and `test` start and link the plugins. The registry layout and the
-security rules are in [`registry/FORMAT.md`](../registry/FORMAT.md).
+security rules are in [`registry/FORMAT.md`](https://github.com/QuartzProject/Quartz/blob/main/registry/FORMAT.md).
 
 ## `quartz fmt`
 
