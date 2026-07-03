@@ -60,5 +60,7 @@ instead (see [Embedding](embedding.md)).
 
 ## Editor
 
-The VS Code extension in `editors/vscode` adds syntax highlighting and starts `quartz-lsp` for diagnostics, completion
-with automatic imports, go to definition, references, rename and formatting.
+The [VS Code extension](https://github.com/QuartzProject/VSCode-Extension) and the
+[JetBrains plugin](https://github.com/QuartzProject/JetBrains-Plugin) add syntax highlighting and start `quartz-lsp` for
+diagnostics, completion with automatic imports, go to definition, references, rename and formatting. Neovim, Helix, Zed
+and Notepad++ use the definitions in [QuartzProject/Grammars](https://github.com/QuartzProject/Grammars).

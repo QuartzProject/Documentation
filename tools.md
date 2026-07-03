@@ -128,6 +128,6 @@ names from other packages, adding the `import`), formatting, and the editor feat
 
 ## VS Code
 
-`editors/vscode` holds the extension: syntax highlighting for `.qz` and `.qzi`, the language server, found on the
+The extension ([QuartzProject/VSCode-Extension](https://github.com/QuartzProject/VSCode-Extension)) gives syntax highlighting for `.qz` and `.qzi`, the language server, found on the
 `PATH` or set with `quartz.server.path`, and the debugger, which runs `quartz debug --dap` (`quartz` on the `PATH` or
 set with `quartz.cli.path`). F5 on a `.qz` file debugs it; `launch.json` offers "Run current file" and "Run tests".
