@@ -25,8 +25,13 @@ The first version: the whole language of the current specification, both executi
   `geometry`, `noise`, `semver`, and the `http` and `log` shapes over host capabilities; checked and saturating
   arithmetic on every integer type.
 - **Tools:** compiler warnings for unused names, dropped results, shadowed locals and unreachable `match` arms
-  (`quartz check --deny-warnings`); `quartz` (check, run, test, build, new, interface, fmt), `quartz-lsp`, a VS Code extension, a tree-sitter
+  (`quartz check --deny-warnings`); `quartz` (check, run, test, build, interface, fmt, doc, repl, debug), `quartz-lsp`, a VS Code extension, a tree-sitter
   grammar for Neovim, Helix and Zed.
+- **Qiln:** the build and package tool, with builds configured in Quartz (`build.qz`, `settings.qz`), a
+  configuration cache, build plugins written in Quartz that run in a sandbox, Maven layout repositories with signed
+  `.qzmeta` files, and `qiln.lock`. The package registry moved out of the `quartz` command: `quartz add`, `fetch`,
+  `publish`, `owner` and `new`, `quartz.lock` and the `$QUARTZ_CACHE` cache are gone; `qiln` replaces them (see
+  [Qiln](qiln.md) and [Repository format](registry-format.md)).
 - **Platforms:** Linux x86-64 and arm64, Windows x64; macOS and FreeBSD written but not verified yet.
 
 ## Before 1.0
@@ -40,7 +45,7 @@ Each of these is either a change that would break programs or hosts later, or so
 3. **Binary module format:** a runtime that loads every older minor version of the same major version.
 4. **C interface:** reviewed once more against the JVM and Kotlin bindings, then frozen at `QZ_ABI_VERSION` 1 for all of
    1.x.
-5. **Package repository:** a public index at quartzlang.org with publisher verification.
+5. **Package repository:** the public repository at repo.quartzlang.org, with namespace verification.
 6. **Verified platforms:** macOS and FreeBSD tested in CI like the others.
 
 After 1.0 the language, the C interface and the module format follow semantic versioning.

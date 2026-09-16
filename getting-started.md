@@ -17,18 +17,18 @@ already faster than Lua.
 
 ## Create a package
 
-Every package has a reverse-domain name you control:
-
-```bash
-quartz new org.example.hello
-```
-
-That creates:
+Every package has a reverse-domain name you control. A package is a folder with a `package.toml` and its sources:
 
 ```
 hello/
   package.toml      name, version and the functions the package exports
   src/main.qz       a function and a test
+```
+
+```toml
+name = "org.example.hello"
+version = "0.1.0"
+exports = ["greet"]
 ```
 
 ```quartz
@@ -57,6 +57,37 @@ quartz build hello -o hello.qzb   # a portable, validated module; --sign signs i
 
 `quartz run` gives programs a `print` function and `n.ticks` for `wait`; a real host gives them its own interface
 instead (see [Embedding](embedding.md)).
+
+## Dependencies and projects
+
+The `quartz` command builds and runs a package on its own. To use packages from a repository, split a program into
+several projects or publish a package, use [Qiln](qiln.md), the build tool. It sets up a project with a `build.qz`
+written in Quartz:
+
+```console
+$ qiln init hello
+created application org.example.hello in hello; try 'qiln test' and 'qiln run'
+$ cd hello
+$ qiln run
+> :build
+  wrote build/libs/hello-0.1.0.qzb (913 bytes)
+> :run
+Hello, Quartz!
+```
+
+Dependencies are declared in `build.qz` and pinned in `qiln.lock`:
+
+```quartz
+import org.quartzlang.qiln.*
+
+fn build(p: Project) {
+    p.group = "org.example"
+    p.version = "0.1.0"
+    p.kind = Kind.Application
+    p.repository(Repository.local("../repo"))
+    p.dependencies([implementation("org.example.text:^0.1")])
+}
+```
 
 ## Editor
 

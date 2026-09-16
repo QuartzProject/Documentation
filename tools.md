@@ -5,24 +5,23 @@
 | Command | |
 |---|---|
 | `quartz check <files or folder>` | Type check and validate; prints errors and warnings |
-| `quartz run <files or .qzb> [--entry name]` | Run `main` (or `--entry`) with `print` and `n.ticks` available |
+| `quartz run <files, folder or .qzb> [--entry name]` | Run `main` (or `--entry`) with `print` and `n.ticks` available |
 | `quartz run ... --profile [--profile-out out.json]` | Run and report calls, fuel and time per function and per call path |
 | `quartz debug --dap` | The debugger: speaks the Debug Adapter Protocol on standard input and output for an editor |
 | `quartz test <files or folder> [--filter text]` | Run every `@test` function, each in a fresh sandbox |
 | `quartz build <files or folder> -o out.qzb [--sign seed] [--strip-lines]` | Build a validated module; a folder brings its `package.toml` |
 | `quartz interface <package.qzb>` | Print the `.qzi` other packages compile against |
-| `quartz keygen <seed file>` | Create an Ed25519 signing key; prints the public key |
-| `quartz new <org.example.name>` | Start a package |
+| `quartz keygen <seed file>` | Create an Ed25519 signing key for `build --sign`; prints the public key |
 | `quartz repl` | Interactive prompt: expressions print their value; declarations, imports and `state` carry over |
 | `quartz doc <files or folder> [-o api.md]` | Markdown reference of the public declarations and their `///` comments |
-| `quartz add <name>[@range] [folder]` | Add a dependency to `package.toml` (the newest version, `^x.y.z`, without a range) |
-| `quartz fetch [folder] [--update] [--allow-key-change]` | Resolve dependencies, verify and cache them, write `quartz.lock` |
-| `quartz publish [folder] --registry <dir> --sign <seed>` | Add the package to a local registry directory |
-| `quartz owner <prefix> <public key> --registry <dir>` | Let a key publish names under a prefix |
 | `quartz fmt [--check] <files or folders>` | Format in place, or list unformatted files |
 | `quartz ir`, `quartz dis` | Print the IR or the bytecode |
 
-`run` and `ir` also accept `--trust <public key>` and `--require-signature` to load only signed modules.
+`run` and `ir` also accept `--trust <public key>` and `--require-signature` to load only signed modules. `check`,
+`run`, `test` and `build` take `--deny-warnings` and `--rule <rule>=ignore|warning|error`.
+
+The `quartz` command works on files and folders on their own. Dependencies, workspaces of several projects,
+repositories and publishing belong to [Qiln](qiln.md), the build tool (see [Packages](#packages)).
 
 ## Debugging
 
@@ -33,7 +32,7 @@ takes:
 
 | Attribute | |
 |---|---|
-| `program` | A `.qz` file, a package folder (with its dependencies and plugins, as `quartz run` does) or a `.qzb` module |
+| `program` | A `.qz` file, a package folder (as `quartz run` takes it) or a `.qzb` module |
 | `entry` | The function to run, `main` by default |
 | `tests` | `true` runs every `@test` function, each in a fresh sandbox, instead of `entry` |
 | `filter` | With `tests`: only the tests whose name contains this text |
@@ -90,30 +89,29 @@ pub fn total(orders: [Order]) -> int {
 }
 ```
 
-## Packages and registries
+## Packages
 
-`package.toml` says what a package is and what it needs:
+`package.toml` says what a package is:
 
 ```toml
 name = "org.example.app"
 version = "0.1.0"
 kind = "library"            # or "plugin"; library is the default
-registry = "https://packages.example.org"   # a directory or file:// URL works offline
-
-[dependencies]
-"org.example.text" = "^0.3"
-"org.example.bank" = ">=2.0, <3"
+exports = ["greet"]         # functions other packages may call, for a plugin
 ```
 
-A **library** is published as source and compiled into every package that uses it, so generics and inlining work
-across it and a call costs what any call costs. A **plugin** is published as its signed `.qzb`, keeps its own sandbox
-and `state`, and is linked at run time; the packages that use it compile against the interface `quartz interface`
-derives from it.
+`quartz check`, `run`, `test` and `build` on a folder compile every `.qz` and `.qzi` file below it, and `build`
+carries its `package.toml` into the module. A folder whose `package.toml` declares `[dependencies]` is refused with a
+message that points to Qiln: the `quartz` command does not resolve or download anything.
 
-`check`, `build`, `test` and `run` on a folder use its dependencies: they read `quartz.lock` (or resolve and write it
-the first time), take the archives from the cache (fetching and verifying what is missing), add library sources and
-plugin interfaces to the compile, and `run` and `test` start and link the plugins. The registry layout and the
-security rules are in [Registry format](registry-format.md).
+A **library** is compiled into every package that uses it, so generics and inlining work across it and a call costs
+what any call costs. A **plugin** keeps its own sandbox and `state` and is linked at run time; the packages that use it
+compile against the interface `quartz interface` derives from its module.
+
+Dependencies on other packages, workspaces, repositories, `qiln.lock` and publishing are handled by
+[Qiln](qiln.md): dependencies are declared in `build.qz`, `qiln deps` resolves them, `qiln publish` signs and
+publishes, and `qiln init` starts a project. The repository layout and its security rules are in
+[Repository format](registry-format.md).
 
 ## `quartz fmt`
 
