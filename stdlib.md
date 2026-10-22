@@ -12,18 +12,20 @@ both execution tiers.
 | `char` and `int` | `c.code() -> int`, `n.toChar() -> char?`, `n.abs()`, `n.clamp(lo, hi)` |
 | every integer type | `checkedAdd(b)`, `checkedSub(b)`, `checkedMul(b)`, `checkedDiv(b)` return `T?` (null on overflow or division by zero); `saturatingAdd(b)`, `saturatingSub(b)`, `saturatingMul(b)` clamp to the type's range |
 | `float` | `sqrt()`, `floor()`, `ceil()`, `round()`, `abs()`, `sin()`, `cos()`, `tan()`, `asin()`, `acos()`, `atan()`, `exp()`, `log()`, `log10()`, `clamp(lo, hi)` |
-| `[T]` | `len()`, `push(v)`, `pop() -> T?`, `clear()`, `xs[i]`, `insert(i, v)`, `removeAt(i) -> T`, `insertAll(i, other)`, `reverse()`, `slice(a, b)`; for numbers, `bool`, `char` and `str` also `contains(v)`, `indexOf(v) -> int?`, `sort()`; `[str]` has `join(separator)` |
+| `[T]` | `len()`, `push(v)`, `pop() -> T?`, `clear()`, `xs[i]`, `insert(i, v)`, `removeAt(i) -> T`, `insertAll(i, other)`, `reverse()`, `slice(a, b)`; for numbers, `bool`, `char` and `str` also `contains(v)`, `indexOf(v) -> int?`; for any element with `Ord` `sort()`, `sorted()` (a sorted copy), `min() -> T?`, `max() -> T?`; `[str]` has `join(separator)` |
 | `[T]` with functions | `map(f)`, `filter(keep)`, `any(test)`, `all(test)`, `find(test) -> T?`, `indexWhere(test) -> int?`, `sortBy(key)`, `sortWith(cmp)` |
 | `Map<K, V>` | `len()`, `get(k) -> V?`, `set(k, v)`, `has(k)`, `remove(k)`, `m[k]` |
 | `Result<T, E>` | `isOk()`, `isErr()`, `unwrap()`, `unwrapOr(fallback)`, `?` |
 | `T?` | `unwrap()`, `unwrapOr(fallback)`, `??`, `?.`, `if let` |
 
-Sorting is stable. Floats sort by IEEE total order (`-0.0` before `0.0`, NaN last); strings sort by bytes.
+Sorting is stable. Floats sort by IEEE total order (`-0.0` before `0.0`, NaN last, so `max` of a list with a NaN is
+NaN); strings sort by bytes; other types by their `cmp`.
 
 ```quartz
 let names = " ada, bo ,cy ".split(",").map((w) => w.trim())   // ["ada", "bo", "cy"]
 names.sortBy((n) => n.len())                                     // ["bo", "cy", "ada"]
 let long = names.filter((n) => n.len() > 2)                      // ["ada"]
+let first = names.min() ?? ""                                    // "ada"
 ```
 
 ## `org.quartzlang.math`
@@ -233,7 +235,8 @@ let next = daily.next(now)                        // Instant?, in UTC
 ```
 
 Each of these types also has the free `parseX` function under its old name (`parseDuration`, `parseCron`...).
-`Duration`: `nanos(n)`, `micros`, `millis`, `seconds`, `minutes`, `hours`, `days`; `plus`, `minus`, `times`, `div`,
+`Duration`: `Duration.seconds(90)` and likewise `nanos`, `micros`, `millis`, `minutes`, `hours` and `days` build one
+(also as functions of the package, `time.seconds(90)`); `plus`, `minus`, `times`, `div`,
 `negate`, `abs`, `compareTo`, `toSeconds()` and friends, `toStr()`. `Instant`: `fromEpochMillis`, `fromEpochSeconds`,
 `fromEpochNanos`, `instantOf(year, month, day, hour, minute, second, nano)`, `Instant.parse` (RFC 3339); `plus`,
 `minus`, `since`, `isBefore`, `utc() -> DateTime`, `toStr()` (RFC 3339 in UTC).
@@ -294,16 +297,23 @@ lookaround; both make matching non-linear, and patterns that use them are reject
 | `r.replace(text, replacement)`, `r.replaceAll(text, replacement)` | `$1` or `${1}` by number, `${name}` by name, `$0` the whole match, `$$` a dollar |
 | `r.split(text, limit = 0)` | the pieces between matches; at most `limit` pieces when positive |
 | `r.groupCount()` | capturing groups, not counting the whole match |
+| `r.groupNames()`, `r.hasGroup(name)` | the named groups in the order they open, and whether `name` is one of them |
 | `escapeRegex(text)` | a pattern that matches exactly `text` |
 | `m.start`, `m.end`, `m.text` | byte offsets into the text (what `slice` takes) and the matched text |
 | `m.group(i) -> str?`, `m.named(name) -> str?`, `m.span(i) -> (int, int)?` | null for a group that took no part; an index or name the pattern lacks panics |
+| `m.groupNames()`, `m.hasGroup(name)` | the same as on the `Regex`, so a match can be read without it |
+
+Raw strings (`r"\d+"`) keep patterns readable: in a plain string every backslash is doubled and a brace has to be
+written `\{`.
 
 ```quartz
-let mention = compileRegex("@(?P<user>\\w\{3,16})").unwrap()
+import org.quartzlang.regex.*
+
+let mention = compileRegex(r"@(?P<user>\w{3,16})").unwrap()
 for m in mention.findAll("hi @ada and @bob_7") {
     print(m.named("user") ?? "")                                // ada, then bob_7
 }
-let dates = compileRegex("(\\d+)/(\\d+)/(\\d+)").unwrap()
+let dates = compileRegex(r"(\d+)/(\d+)/(\d+)").unwrap()
 print(dates.replaceAll("due 3/14/2026", "$3-$1-$2"))            // due 2026-3-14
 ```
 
