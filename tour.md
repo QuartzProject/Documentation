@@ -48,6 +48,26 @@ fn main() -> int {
 Numbers align right and everything else left unless the format says otherwise. Floats round half to even on their
 exact value, so the same format prints the same text on every platform.
 
+A string between triple quotes can span lines and keeps them as written, indentation included; it still takes escapes
+and interpolation. A raw string, `r"..."`, takes neither: every character is literal, which suits regular expressions
+and paths. `r#"..."#` ends only at `"#`, so it can hold quotes; with more `#` (`r##"..."##`) it can hold `"#` too.
+Raw strings can span lines.
+
+```quartz
+fn main() -> int {
+    let digits = r"\d{4}-\d{2}"             // the regex \d{4}-\d{2}
+    let quoted = r#"say "hi" to {name}"#    // quotes and braces kept as written
+    let report = """
+total: {2 + 3}
+done"""
+    print("{digits} {quoted}{report}")
+    return 0
+}
+```
+
+In a plain string, `"\\d{4}"` interpolates the number 4 and gives `\d4`. The compiler warns when a number literal is
+interpolated right after something that looks like a regular expression, and suggests `\{` or a raw string.
+
 ## Functions
 
 ```quartz
@@ -65,7 +85,9 @@ function calls, lists or maps (`const Area = Side * Side` is fine, `const Now = 
 
 The compiler also warns about unused variables, parameters, imports and private functions, a `Result` that is
 dropped, a local that hides another one and `match` arms that can never run; a name that starts with `_` is never
-reported as unused. `quartz check --deny-warnings` fails on any warning.
+reported as unused. Each warning ends with its rule, such as `[unused-variable]`: `--rule unused-variable=ignore`
+silences that rule, `=error` makes it fail the build, and `--deny-warnings` turns every warning into an error (see
+[Warnings](tools.md#warnings)).
 
 ## Structs and methods
 
@@ -84,9 +106,10 @@ impl Point {
 }
 ```
 
-`Point(3.0, 4.0).length()` is `5.0`. Structs are values: assigning one copies it. Fields can have defaults, and a
-constructor call can name its fields like any other call. `p with { x = 0.0 }` is a copy of `p` with some fields
-changed; several go on one line separated by commas, or one per line.
+`Point(3.0, 4.0).length()` is `5.0`. Structs are values: assigning one copies it. Fields can have defaults, a nullable
+field without one starts as `null`, and a constructor call can name its fields like any other call.
+`p with { x = 0.0 }` is a copy of `p` with some fields changed; several go on one line separated by commas, or one per
+line.
 
 A function in an `impl` block without `self` belongs to the type and is called through its name, also from another
 package (`Point.origin()`, `time.Duration.parse("90s")`):
@@ -119,6 +142,28 @@ fn area(s: Shape) -> float {
 
 `match` must cover every variant; the compiler names the missing ones. Variants are built with `Shape.Circle(1.0)`.
 
+An enum can contain itself, directly or through structs, nullables and other enums, which is how chains, trees and
+expressions are written:
+
+```quartz
+enum Expr {
+    Num(int)
+    Add(Expr, Expr)
+    Neg(Expr)
+}
+
+fn eval(e: Expr) -> int {
+    return match e {
+        Num(n) => n
+        Add(a, b) => eval(a) + eval(b)
+        Neg(a) => -eval(a)
+    }
+}
+```
+
+`eval(Expr.Add(Expr.Num(2), Expr.Neg(Expr.Num(5))))` is `-3`. A struct cannot contain itself by value, since it would
+have no end: keep the children in a list or a map, or make the type an enum. A recursive enum cannot derive `Hash`.
+
 Patterns nest, and also take apart tuples and structs (`Point(x, y)`, in field order); literals, ranges such as
 `1..=9` and `null` fit anywhere inside, and an arm can add a guard with `if`. The compiler checks the whole tree, so
 `Node(Rect(_, _), _)` is reported when nothing covers it.
@@ -135,9 +180,22 @@ fn describe(pair: (Shape, int?)) -> str {
 }
 ```
 
+`A | B` matches either alternative, at any depth, and every alternative binds the same names. After an arm that takes
+`null` without a guard, the arms below see the value as not null:
+
+```quartz
+fn label(n: int?) -> str {
+    return match n {
+        null => "none"
+        0 | 1 => "few"
+        k => "{k * 2}"      // k is an int here
+    }
+}
+```
+
 `let (a, b) = pair` and `let Point(x, y) = p` destructure where the pattern cannot fail. `value is Pattern` tests a
-pattern anywhere, and in an `if` condition (alone or joined with `&&`) its names are bound inside the block:
-`if s is Circle(r) && r > 1.0 { ... }`.
+pattern anywhere, and in an `if` or `while` condition (alone or joined with `&&`) its names are bound inside the
+block: `if s is Circle(r) && r > 1.0 { ... }`, `while tokens[i] is Num(n) { ... }`.
 
 ## Null safety
 
@@ -150,11 +208,21 @@ fn findUser(id: int) -> str? {
     }
     return null
 }
+
+fn firstKnown(ids: [int]) -> str {
+    for id in ids {
+        let name = findUser(id) ?? continue
+        return name
+    }
+    return "nobody"
+}
 ```
 
-- `findUser(2) ?? "nobody"` gives a default.
+- `findUser(2) ?? "nobody"` gives a default, and `?? return`, `?? break` or `?? continue` leave instead.
 - `findUser(1)?.len()` is `null` when the user is missing, otherwise the length.
-- `if let user = findUser(1) { ... }` runs the block with the value when there is one.
+- `if let user = findUser(1) { ... }` runs the block with the value when there is one, and
+  `while let top = stack.pop() { ... }` repeats it while there is one.
+- `x == null` and `x != null` work on any nullable, even when its type has no `Eq`.
 
 ## Errors
 
@@ -182,6 +250,19 @@ fn sumDigits(a: str, b: str) -> Result<int, ParseError> {
 }
 ```
 
+`Ok` and `Err` take their type from where they go: the function's result, or, without one, the other branches of the
+`if` or `match`, so `let r = if n > 0 { Ok(n) } else { Err("negative") }` is a `Result<int, str>`. A function that can
+fail but has nothing to return gives `Result<(), E>` and ends with `Ok(())`:
+
+```quartz
+fn save(name: str) -> Result<(), str> {
+    if name.len() == 0 {
+        return Err("empty name")
+    }
+    return Ok(())
+}
+```
+
 `panic("message")` is for bugs, not for errors: it stops the program and the host gets a trap with the message.
 Nothing in Quartz can crash the host.
 
@@ -195,7 +276,8 @@ scores["ada"] = 3
 let three = scores.get("ada") ?? 0
 ```
 
-Lists have `len`, `push`, `pop`, `clear` and indexing (out of range is a trap); lists of `str` have `join`. Maps have
+Lists have `len`, `push`, `pop`, `clear` and indexing (out of range is a trap); lists of `str` have `join`, and lists
+of any type with `Ord` (your own included) have `sort`, `sorted` (a sorted copy), `min` and `max`. Maps have
 `len`, `get` (which returns `V?`), `set`, `has`, `remove`, `keys`, `values` and indexing. Keys are integers, `bool`,
 `char`, `str`, handles, tuples of them, or structs and enums that derive `Eq` and `Hash`.
 
@@ -347,8 +429,11 @@ suspend fn countdown(n: int) -> int {
 ```
 
 `wait x` pauses until the host resumes the task with the value `x` produces; what can be waited on is declared by the
-host. `every d { ... }` repeats a block, waiting `d` before each round. A suspended task uses a few hundred bytes, so a
-program can keep thousands of them.
+host. `every d { ... }` repeats a block, waiting `d` before each round. `at lane { ... }` runs a block in another
+context the host names with a handle, such as an I/O thread, and continues where it was when the block ends; inside
+it, the block can use plain values (numbers, strings, structs without lists or maps) but not the `state` or lists and
+maps of the task, and it cannot `return`. A suspended task uses a few hundred bytes, so a program can keep thousands of
+them.
 
 Memory in Quartz is managed by arenas, without a garbage collector: everything a call or a task allocates is freed at
 once when it ends. A long loop that waits should allocate inside `scope { ... }`, which frees its allocations at the end
