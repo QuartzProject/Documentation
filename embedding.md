@@ -60,6 +60,11 @@ Link it with the `quartz` library target. The program prints
 `Welcome, Ada! 12 players online, greeting 1`, and `sandbox.exportState()` then returns
 `{"states":{"Stats":{"version":0,"fields":{"greetings":1}}},"handles":{}}`.
 
+`out.diagnostics` is the rendered text of the errors and warnings; `out.messages` has each one with its severity,
+[rule](tools.md#warnings), file and range, for a host that shows them its own way. `CompileOptions::rules` sets the
+level of each warning rule as `--rule` does: with `{{"*", quartz::RuleLevel::Error}}`, any warning fails the
+compilation.
+
 ## Host interfaces (`.qzi`)
 
 A `.qzi` file declares, without bodies, everything the host offers. A program can call nothing else.
@@ -108,6 +113,28 @@ impl int {
 
 A trap aborts only the current call or task. The sandbox stays usable, and nothing a program does can crash the host.
 `setFuelPerCall` changes the budget at any time, for example to follow a wall-clock budget per tick.
+
+### Traps and `state`
+
+A trap does not roll back the `state`: what the call wrote before it stays, and the next call sees it. The memory is
+always sound and the result is the same in both tiers, but the data may be halfway through what the program meant to
+do. Undoing writes inside the VM would cost every write on the hot path, and a task that already waited has nothing to
+go back to, since other calls saw what it wrote before the `wait`. What to do instead:
+
+- When a call must be all or nothing, save the state first and load it back if the call traps. On a large state,
+  exporting and importing take milliseconds, far more than a typical call, so keep this for the calls that matter:
+
+  ```cpp
+  auto saved = sandbox.exportState();
+  auto r = sandbox.call(fn, args);
+  if (!r && saved) {
+      sandbox.importState(*saved);
+  }
+  ```
+
+- A program that keeps trapping can be disabled, or replaced with `reload` once it is fixed.
+- Program authors make the problem go away: compute in locals and write the `state` at the end of the call, so a trap
+  in the middle leaves it untouched.
 
 ## Binding functions
 
@@ -162,6 +189,17 @@ and pass a struct, tuple, enum or nullable as its slots to `resume(task, std::sp
 into the task, so the host's copy only has to live until `resume` returns. `hostMapEntry` (in insertion order) and
 `hostMapGet` read maps a program returns.
 
+When a task finishes, `t->value` is the first slot of its result. A result wider than one slot (a struct, tuple,
+`Result` or nullable) is read whole with `taskResult(task)`, right after the `spawn` or `resume` that finished it and
+before the next call on the sandbox:
+
+```cpp
+if (t && t->kind == quartz::vm::TaskOutcome::Kind::Done) {
+    auto loot = sandbox.taskResult(t->task);    // struct Loot { gold: int, item: str }: two slots
+    std::int64_t gold = loot[0].i;
+}
+```
+
 ## Persistence and reload
 
 - `exportState()` and `importState(json)` save and restore every `state`, with field names and versions.
@@ -176,6 +214,61 @@ A package lists its exported functions in `package.toml`; `quartz interface pack
 other packages compile against, including the structs and enums its functions use. At run time,
 `client.link("org.example.economy", provider)` binds the client's imports to the provider's sandbox. Values (lists, maps,
 structs, tuples and enums included) are copied both ways, never shared, and each side spends its own fuel and memory.
+
+The interface is what a caller reads, so it keeps the parameter names, the `///` comments of functions, types, fields
+and variants, and the defaults that are literals (numbers, `bool`, `char`, strings without interpolation, `null`,
+variants without payload, and lists and tuples of them). A default that names a constant or calls something is left
+out, and callers must pass that argument. The `state` parameters are the provider's own and do not appear. With
+`exports = ["deposit", "balance"]`, this provider:
+
+```quartz
+package org.example.economy
+
+const Welcome = 5
+
+/// What a deposit did.
+pub struct Receipt {
+    /// The balance after the deposit.
+    total: int
+    note: str?
+}
+
+state Bank {
+    accounts: Map<str, int>
+}
+
+/// Adds `amount` to the account of `who`.
+pub fn deposit(bank: Bank, who: str, amount: int = 10, bonus: int = Welcome) -> Receipt {
+    let total = (bank.accounts.get(who) ?? 0) + amount + bonus
+    bank.accounts[who] = total
+    return Receipt(total)
+}
+
+pub fn balance(bank: Bank, who: str) -> int {
+    return bank.accounts.get(who) ?? 0
+}
+```
+
+gives this interface:
+
+```quartz
+package org.example.economy
+
+/// What a deposit did.
+struct Receipt {
+    /// The balance after the deposit.
+    total: int
+    note: str? = null
+}
+
+/// Adds `amount` to the account of `who`.
+fn deposit(who: str, amount: int = 10, bonus: int) -> Receipt
+
+fn balance(who: str) -> int
+```
+
+The comments travel in the module, so an interface generated from a `.qzb` has them too; `qz_program_interface` and
+`quartz::interfaceOf` give the same text to a host.
 
 `quartz::loadPackage(bytes, policy)` loads a `.qzb` only if it is signed by the key the host trusts for that package
 name.
@@ -199,7 +292,13 @@ if (qz_sandbox_call(sandbox, qz_program_function(program, "welcome"), &arg, 1, &
 Host functions receive a `qz_call*`: `qz_call_args`, `qz_call_set_result`, `qz_call_str`, `qz_call_charge` and
 `qz_call_fail`. Memory the library returns is freed with `qz_free`. Lists are built with `qz_sandbox_list` and
 `qz_list_push`, maps with `qz_sandbox_map` and `qz_map_set` and read with `qz_map_length`, `qz_map_entry` and
-`qz_map_get`; `qz_sandbox_resume_wide` answers a `wait` that produces a value wider than one slot.
+`qz_map_get`; `qz_sandbox_resume_wide` answers a `wait` that produces a value wider than one slot, and
+`qz_sandbox_task_result` reads the whole result of a task that just finished.
+
+`qz_compile_with` takes warning levels as `qz_rule_level` entries (`{"unused-variable", QZ_LEVEL_ERROR}`, or `"*"`)
+and returns the diagnostics one by one: `qz_diagnostics_count`, then `qz_diagnostic_severity`, `qz_diagnostic_rule`,
+`qz_diagnostic_file`, `qz_diagnostic_message` and `qz_diagnostic_range` for each, and `qz_diagnostics_free` at the
+end. `qz_warning_rule_count` and `qz_warning_rule` list the rules the library knows.
 
 ## Threads
 
