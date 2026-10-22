@@ -10,7 +10,7 @@
 | `quartz debug --dap` | The debugger: speaks the Debug Adapter Protocol on standard input and output for an editor |
 | `quartz test <files or folder> [--filter text]` | Run every `@test` function, each in a fresh sandbox |
 | `quartz build <files or folder> -o out.qzb [--sign seed] [--strip-lines]` | Build a validated module; a folder brings its `package.toml` |
-| `quartz interface <package.qzb>` | Print the `.qzi` other packages compile against |
+| `quartz interface <package.qzb>` | Print the `.qzi` other packages compile against, with parameter names, `///` comments and defaults |
 | `quartz keygen <seed file>` | Create an Ed25519 signing key for `build --sign`; prints the public key |
 | `quartz repl` | Interactive prompt: expressions print their value; declarations, imports and `state` carry over |
 | `quartz doc <files or folder> [-o api.md]` | Markdown reference of the public declarations and their `///` comments |
@@ -18,10 +18,44 @@
 | `quartz ir`, `quartz dis` | Print the IR or the bytecode |
 
 `run` and `ir` also accept `--trust <public key>` and `--require-signature` to load only signed modules. `check`,
-`run`, `test` and `build` take `--deny-warnings` and `--rule <rule>=ignore|warning|error`.
+`run`, `test` and `build` take `--deny-warnings` and `--rule <rule>=ignore|warning|error` (see [Warnings](#warnings)),
+`--host-only` to compile against the host's own `.qzi` alone, without the `print` and `ticks` the command adds, and
+`--source-name <name>` before a file to record it under that name in traces and line tables instead of its path.
 
 The `quartz` command works on files and folders on their own. Dependencies, workspaces of several projects,
 repositories and publishing belong to [Qiln](qiln.md), the build tool (see [Packages](#packages)).
+
+## Warnings
+
+The compiler warns while it type checks, so warnings cost nothing at run time. Each one ends with the id of its rule:
+
+```text
+shop.qz:2:9: warning: unused variable 'unused' [unused-variable]
+shop.qz:3:18: warning: '{4}' interpolates a number literal; write '\{' for a brace, or use a raw string (r"...") [literal-interpolation]
+```
+
+| Rule | Warns about |
+|---|---|
+| `unused-variable`, `unused-parameter`, `unused-import` | a name that is never read (a leading `_` silences it) |
+| `unused-assignment` | a variable that is assigned and never read |
+| `unused-private` | a `private` function, or a method without `pub` or `internal`, that nothing calls (other functions may be called by the host) |
+| `discarded-result` | a `Result` that is dropped; handle it or write `let _ = ...` |
+| `shadowed-variable` | a local that hides another one in the same function (`if let x = x` is fine) |
+| `unreachable-pattern`, `unreachable-code` | a `match` arm that can never run; code that can never run, such as after a `return` |
+| `deprecated` | a call to something marked `@deprecated` |
+| `unknown-attribute` | an attribute that is not one of the [language's](tour.md#attributes) |
+| `unscoped-wait-loop` | a loop that waits and allocates outside a `scope` |
+| `literal-interpolation` | `"\\d{4}"`, which interpolates the number 4 where a regular expression was meant |
+| `unknown-rule` | a `--rule` that names no rule |
+
+Each rule has a level: `ignore`, `warning` (the default) or `error`. `--rule unused-parameter=ignore` sets one,
+`--rule '*=error'` sets them all, and when several apply the last one wins, so `--rule '*=error' --rule
+deprecated=warning` fails on everything but deprecations. `--deny-warnings` is `*=error`. A warning raised to an error
+fails `check`, `run`, `test` and `build` like any other error. Interfaces, the standard library and dependencies never
+warn, and the unused rules stay quiet while there are errors.
+
+Hosts set the same levels with `CompileOptions::rules` (or `qz_compile_with` in C) and read each diagnostic with its
+rule, file and range; the language server sends the rule as the diagnostic's code, and Qiln has `denyWarnings`.
 
 ## Debugging
 
@@ -106,7 +140,8 @@ message that points to Qiln: the `quartz` command does not resolve or download a
 
 A **library** is compiled into every package that uses it, so generics and inlining work across it and a call costs
 what any call costs. A **plugin** keeps its own sandbox and `state` and is linked at run time; the packages that use it
-compile against the interface `quartz interface` derives from its module.
+compile against the interface `quartz interface` derives from its module (see
+[Packages that call each other](embedding.md#packages-that-call-each-other)).
 
 Dependencies on other packages, workspaces, repositories, `qiln.lock` and publishing are handled by
 [Qiln](qiln.md): dependencies are declared in `build.qz`, `qiln deps` resolves them, `qiln publish` signs and
@@ -129,3 +164,11 @@ names from other packages, adding the `import`), formatting, and the editor feat
 The extension ([QuartzProject/VSCode-Extension](https://github.com/QuartzProject/VSCode-Extension)) gives syntax highlighting for `.qz` and `.qzi`, the language server, found on the
 `PATH` or set with `quartz.server.path`, and the debugger, which runs `quartz debug --dap` (`quartz` on the `PATH` or
 set with `quartz.cli.path`). F5 on a `.qz` file debugs it; `launch.json` offers "Run current file" and "Run tests".
+
+## JetBrains IDEs
+
+The plugin ([QuartzProject/JetBrains-Plugin](https://github.com/QuartzProject/JetBrains-Plugin)) works in IntelliJ
+IDEA, CLion and the other IDEs of the IntelliJ Platform from 2026.2: highlighting with the same TextMate grammar as VS
+Code, `quartz-lsp` through the IDE's own LSP client (set its path, and the `quartz` command's, under **Settings |
+Languages & Frameworks | Quartz**), run configurations for `quartz run`, `test` and `check`, and the debugger over
+`quartz debug --dap`. Android Studio lacks the IDE's LSP support, so the plugin does not install there.
