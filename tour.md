@@ -447,5 +447,8 @@ of the block; `every` does this for each round, and the compiler warns about loo
 | `@deprecated("use x")` | callers get a warning |
 | `@inline`, `@noinline` | inlining hints for the native tier |
 | `@repr(C)` | a struct with the C layout, passed to the host as a C struct |
+| `@derive(Eq, Hash, Ord, Show, Decode, Encode)` | generated implementations of the language traits and of typed decoding |
+| `@key("max-players")` | the key a field has in TOML, JSON or YAML, for `@derive(Decode, Encode)` |
+| `@version(n)`, `@renamed("old")`, `@persist(per = T)` | on a `state` and its fields: its version, a field's old name, one instance per handle |
 | `@on`, `@command`, `@requires` | metadata the host reads, such as event handlers and commands |
 | `@property`, `@handle`, `@awaitable` | in host interfaces: properties, opaque host objects and what `wait` accepts |
