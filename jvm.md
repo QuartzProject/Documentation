@@ -146,6 +146,72 @@ interpreter runs there.
 ./gradlew :quartz-kmp:jsNodeTest :quartz-kmp:wasmJsNodeTest -Pquartz.wasm=/path/to/Quartz/build/wasm/wasm
 ```
 
+## Diagnostics and warning levels
+
+`Quartz.compile` reports every diagnostic as data. `Program.diagnostics()` holds the warnings of a program that
+compiled, and `CompileException.diagnostics()` everything of one that did not (`errors()` keeps only the errors). Each
+`Diagnostic` has a `severity()` (`ERROR`, `WARNING`, `NOTE`), the warning `rule()` (`unused-variable`; empty for other
+errors), the `file()` as you named it, a range (`line`, `column`, `endLine`, `endColumn`, from 1, columns in UTF-8
+bytes, all 0 when there is no place) and the `message()`. `diagnosticsText()` and `text()` give them as the compiler
+prints them.
+
+Warning rules can be set per compilation; a later entry wins and `*` is every rule:
+
+```java
+CompileOptions options = CompileOptions.DEFAULT
+        .denyWarnings()                                     // every warning is an error...
+        .withRule("unused-parameter", WarningLevel.IGNORE); // ...except this one
+Program program = Quartz.compile(sources, options);
+```
+
+`Quartz.warningRules()` lists the rule ids the library knows. An unknown id is reported as an `unknown-rule` warning.
+
+## Introspection
+
+A program describes itself:
+
+- `program.exports()` lists the functions a host may call. Each `Export` has its `name()` with its package
+  (`org.example.greet`), `simpleName()`, `packageName()`, `parameterNames()`, `signature()`, `visibility()` (`PUBLIC`
+  for `pub`, `PRIVATE`...), `isSuspend()` and `attributes()`. `find(name)` takes the name with or without its package,
+  and throws `IllegalArgumentException` when several functions share a short name.
+- An `Attribute` is written as in the source: `@command("heal", perm = "x.heal")` has `name()` `command`,
+  `positional(0)` `"heal"` and `named("perm")`. Arguments are typed: `asLong()`, `asDouble()`, `asBoolean()` and
+  `asString()` (also for names such as `Join`). For `@on(Join, where = event.level > 3)`, `filter()` is the exported
+  function that tests the handler's first argument: call it and skip the handler when it returns `false`.
+- `program.imports()` gives each `Import` its `packageName()` and `required()`, which is false when no code calls it:
+  `start()` does not ask for its binding.
+- A `Type` has its `name()` as the source writes it (`Player`, `[int]`, `Map<str, Pt>`), its `packageName()` and
+  `qualifiedName()`.
+
+## Converting values, handles included
+
+`Values` converts between what the bindings give and take (a `Value`, `Struct`, `Variant`, `Result`, lists, maps,
+boxed scalars) and your classes: records, Kotlin data classes, enums and sealed types, matched by field and variant
+name.
+
+```java
+Point p = Values.to(value, Point.class);
+List<Point> line = Values.to(value, new TypeRef<List<Point>>() {});
+Object arg = Values.from(new Event.Leave(player, "bye"), export.signature().params().get(0), handles);
+```
+
+`Values.from(object, type)` gives what `Value.get()` would give for a value of that Quartz type, ready to pass to a
+call or to return from a host function. Give a `HandleMapper` (two methods: the object behind an id, and the id of an
+object) and `@handle` values are mapped wherever they sit: in lists, maps, struct fields, tuples, `Result`s and enum
+variants. A `long` or `Long` target keeps the id. `Value.to(target, handles)` and `HostCall.arg(i, target, handles)`
+do the same from a result or an argument. In Kotlin: `value.read<Event>(handles)`, `call.argAs<Event>(0, handles)` and
+`handleMapper({ id, _ -> ... }, { obj, _ -> ... })`.
+
+In Kotlin Multiplatform, `QuartzValues.from(value, type, handles)` normalizes a value and turns host objects into ids,
+and `QuartzValues.resolveHandles(value, type, handles)` turns the ids of a result back into objects. `@Serializable`
+classes keep handles as `Long` fields. The common API has the same diagnostics, warning levels, introspection
+(`exports`, `attributes`, `Import.required`) and wide task results on every target.
+
+## Task results
+
+When a task finishes, `TaskOutcome.value()` is its whole result, structs and tuples included, read like the result of
+`call`.
+
 ## Values and lifetimes
 
 A `Value` knows its type: `kind()` is the `Kind` the function declares (`I64`, `F64`, `STR`, `LIST`...). The
@@ -178,10 +244,10 @@ freed memory. Strings a host function receives are copied out when read, and are
 ## Building
 
 ```sh
-## with a libquartz built elsewhere
+# with a libquartz built elsewhere
 ./gradlew build -Pquartz.library=/path/to/libquartz.so
 
-## or let Gradle build libquartz for this host from a Quartz checkout (CMake, Ninja and Clang required)
+# or let Gradle build libquartz for this host from a Quartz checkout (CMake, Ninja and Clang required)
 ./gradlew :quartz-java:buildNative build -Pquartz.source=/path/to/Quartz
 ```
 
@@ -219,10 +285,6 @@ quarter off the median host call. Most of what is left of a Java host call is th
 
 ## Limitations
 
-- Structs, tuples, maps, enums with payloads and other nullable values cannot be passed yet, and wide results come
-  back as raw slots: the C interface does not describe the fields of a struct or tuple. Calling a function that takes
-  one throws `IllegalArgumentException` instead of guessing. `@handle` values travel as `long`.
-- `Program.imports()` also lists the runtime's own natives (`Bytes.len`, `org.quartzlang.data.parseJson`...), marked
-  `builtIn()`; the sandbox binds those by itself.
+- `Program.imports()` also lists the runtime's own natives, marked `builtIn()`; the sandbox binds those by itself.
 - On Windows the extracted DLL cannot be deleted while loaded, so a copy stays in the temporary directory.
 - 64-bit platforms only.
