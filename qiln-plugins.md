@@ -89,7 +89,9 @@ fn build(p: Project) {
 ```
 
 Because the API is Quartz compiled into the script, the language server type checks every use, completes the fields
-of `Bundle` and shows the `///` comments on hover.
+of `Bundle` and shows the `///` comments on hover: every configuration writes the API of each requested plugin to
+`.qiln/api/plugins/<name>/` at the workspace root, and `quartz-lsp` compiles `build.qz` against it (see
+[Editors](qiln.md#editors)).
 
 ## The `src/` half
 
@@ -97,11 +99,13 @@ Task actions live in a package of their own, usually the plugin's name plus `.ta
 `org.quartzlang.qiln.task.*`. Each action is a public function with exactly this shape:
 
 ```quartz
-pub fn bundle(t: TaskContext) -> Result<str, str>
+pub fn bundle(t: TaskContext) -> Result<(), str>
 ```
 
-`Ok` carries a one-line summary that `qiln` prints under the task; `Err` fails the task (and the build) with that
-message. A trap (a `panic`, running out of fuel, an index out of range) fails it too, with the trace.
+`Ok(())` means the task succeeded; what it has to say goes through `log`, which `qiln` prints under the task. `Err`
+fails the task (and the build) with its message. A trap (a `panic`, running out of fuel, an index out of range) fails
+it too, with the trace. The older shape `-> Result<str, str>`, whose `Ok` carried a summary line, still runs but
+prints a deprecation warning each time the action runs.
 
 ### `task.qzi`
 
@@ -157,7 +161,7 @@ internal struct Manifest {
     description: str = ""
 }
 
-pub fn bundle(t: TaskContext) -> Result<str, str> {
+pub fn bundle(t: TaskContext) -> Result<(), str> {
     let path = t.option("manifest") ?? "plugin.toml"
     let extension = t.option("extension") ?? "bundle"
     let level = (t.option("level") ?? "9").toInt() ?? 9
@@ -180,7 +184,7 @@ pub fn bundle(t: TaskContext) -> Result<str, str> {
     return Err("build/{t.artifact} is missing; the build task writes it")
 }
 
-fn pack(t: TaskContext, m: Manifest, text: str, module: Bytes, extension: str, level: int) -> Result<str, str> {
+fn pack(t: TaskContext, m: Manifest, text: str, module: Bytes, extension: str, level: int) -> Result<(), str> {
     let index = "name={m.name}\nversion={m.version}\nmain={m.main}\nmodule=plugin.qzb\nsha256={sha256(module).hex()}\n"
     let entries = [
         ZipEntry("plugin.toml", text.toBytes()),
@@ -193,12 +197,22 @@ fn pack(t: TaskContext, m: Manifest, text: str, module: Bytes, extension: str, l
         return Err("cannot write build/{out}")
     }
     log("{m.name} {m.version} by {m.authors.join(", ")}")
-    return Ok("wrote build/{out} ({archive.len()} bytes)")
+    log("wrote build/{out} ({archive.len()} bytes)")
+    return Ok(())
 }
 ```
 
 `problems` (left out here) returns every mistake in the manifest, so one run reports all of them. The task depends
 on `build`, so the module it reads is always fresh, and it reads that module only through `t.artifact`.
+
+### Up to date
+
+A plugin task that succeeds is skipped on the next run while nothing it used changed, like the built-in tasks (see
+[Up-to-date checks](qiln.md#up-to-date-checks)). Its fingerprint is the plugin's sources, the task's options, the
+project's name, version and source list, plus every file the action read, every `exists` it asked and every file it
+wrote, as the host recorded them while serving the calls. The record is exact because the action is deterministic
+and sees the world only through `TaskContext`: an action needs no declared inputs or outputs. Deleting an output, or
+changing a file it read, runs it again; `qiln --rerun` runs it regardless.
 
 ### Testing
 
@@ -217,8 +231,8 @@ fn reportsEveryProblem() {
 }
 ```
 
-`qiln check` on a build plugin compiles `api/` against the build interface and `src/` against `task.qzi`, so both
-halves are checked before anything uses them.
+`qiln check` on a build plugin compiles `api/` against the build interface and `src/` against `task.qzi`, both with
+the plugin's own warning levels (`p.denyWarnings`, `p.warning`), so both halves are checked before anything uses them.
 
 ## The plugin's `build.qz`
 
@@ -261,12 +275,12 @@ described by a signed `.qzmeta` whose kind is `build-plugin` (see [Repository fo
 
 ```console
 $ qiln keygen
-wrote ~/.qiln/signing.key; public key 42e96ccad2af7b98a559d460dc31800f875d522a3e3d961e9124f05ebd340c12
+wrote ~/.qiln/signing.key; public key 6a3d5972c4aa470a962122b2c1be1e1c033f2d9ba19a8596bcf1feede4314df3
 $ qiln publish
 > :build
   wrote build/libs/bundle-1.0.0.qzs (1515 bytes)
 > :publish
-  published org.example.bundle 1.0.0 (build-plugin, 1515 bytes, blake2b ccd322be68b7ddf7) to ../repo
+  published org.example.bundle 1.0.0 (build-plugin, 1515 bytes, blake2b 44748f174de3bfdf) to ../repo
 ```
 
 Workspaces then request it by name and range from a plugin repository:

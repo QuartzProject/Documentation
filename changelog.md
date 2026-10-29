@@ -39,8 +39,10 @@ The first version: the whole language of the current specification, both executi
 - **Editors:** the VS Code extension and the JetBrains plugin, both with the language server and the debugger; the
   tree-sitter grammar for Neovim, Helix and Zed; the TextMate grammar; Notepad++.
 - **Qiln:** the build and package tool, with builds configured in Quartz (`build.qz`, `settings.qz`), a
-  configuration cache, build plugins written in Quartz that run in a sandbox, Maven layout repositories with signed
-  `.qzmeta` files, and `qiln.lock`. The package registry moved out of the `quartz` command: `quartz add`, `fetch`,
+  configuration cache, tasks skipped while up to date and run in parallel, build plugins written in Quartz that run in
+  a sandbox, warning levels per rule, `qiln add` and `qiln remove`, Maven layout repositories with signed `.qzmeta`
+  files, publishing over HTTPS with credentials, `qiln.lock`, and `.qiln/api/`, from which `quartz-lsp` checks and
+  completes build scripts. The package registry moved out of the `quartz` command: `quartz add`, `fetch`,
   `publish`, `owner` and `new`, `quartz.lock` and the `$QUARTZ_CACHE` cache are gone; `qiln` replaces them (see
   [Qiln](qiln.md) and [Repository format](registry-format.md)).
 - **Embed:** Quartz as a source language of Gradle and CMake projects, with modules type checked against the host's

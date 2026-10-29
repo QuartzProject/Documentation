@@ -55,7 +55,8 @@ fails `check`, `run`, `test` and `build` like any other error. Interfaces, the s
 warn, and the unused rules stay quiet while there are errors.
 
 Hosts set the same levels with `CompileOptions::rules` (or `qz_compile_with` in C) and read each diagnostic with its
-rule, file and range; the language server sends the rule as the diagnostic's code, and Qiln has `denyWarnings`.
+rule, file and range; the language server sends the rule as the diagnostic's code, and Qiln has `p.denyWarnings`
+and `p.warning`.
 
 ## Debugging
 
@@ -158,6 +159,10 @@ it twice changes nothing the second time.
 A language server over standard input and output. It analyses every package in the open folder together and offers
 diagnostics as you type, hover with types and signatures, go to definition, document symbols, completion (including
 names from other packages, adding the `import`), formatting, and the editor features the extension advertises.
+
+A Qiln build script (`build.qz` or `settings.qz` under a workspace Qiln has configured) is analysed on its own
+against the build interface and the plugins' APIs that Qiln writes to `.qiln/api/`, as Qiln compiles it, without the
+runner's `print`; see [Qiln: Editors](qiln.md#editors).
 
 ## VS Code
 

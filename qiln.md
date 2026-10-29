@@ -6,8 +6,8 @@ dependencies; anything with dependencies, workspaces of several projects or publ
 
 - **Builds are configured in Quartz.** Each project has a `build.qz` and a workspace of several projects has a
   `settings.qz`, in the spirit of Gradle's Kotlin DSL. They are type checked against Qiln's build interface, so a
-  mistake is a compile error with a line number, and the language server completes and checks them like any other
-  source.
+  mistake is a compile error with a line number, and the language server completes and checks them against the
+  same interface (see [Editors](#editors)).
 - **Configuration runs in a sandbox.** A build script can only call the build API: it cannot read files, reach the
   network or start processes, and it has a fuel and memory budget. Because Quartz is deterministic, the configured
   workspace is cached by the hash of its inputs, and later runs skip the scripts.
@@ -54,7 +54,16 @@ $ qiln test
   1 passed, 0 failed
 $ qiln run
 > :build
-  wrote build/libs/hello-0.1.0.qzb (913 bytes)
+  wrote build/libs/hello-0.1.0.qzb (960 bytes)
+> :run
+Hello, Quartz!
+```
+
+When run again, the tasks whose inputs did not change are skipped (see [Up-to-date checks](#up-to-date-checks)):
+
+```console
+$ qiln run
+> :build UP-TO-DATE
 > :run
 Hello, Quartz!
 ```
@@ -149,7 +158,7 @@ build.qz: trap: host error: '1.0' is not a major.minor.patch version in 'build' 
 | `p.description` | `str` | up to 1024 bytes; goes into the published `.pom` |
 | `p.kind` | `Kind` | what the project produces (below); `Kind.Library` by default |
 | `p.entry` | `str` | the function `qiln run` starts; `main` by default |
-| `p.denyWarnings` | `bool` | compiler warnings fail `check`, `build` and `test` |
+| `p.denyWarnings` | `bool` | every compiler warning fails `check`, `build` and `test`, except rules given another level with `p.warning` |
 | `p.hostOnly` | `bool` | compile only against the declared host interfaces, without the runner's `print` |
 
 | Kind | Published as | Used by |
@@ -170,6 +179,7 @@ build.qz: trap: host error: '1.0' is not a major.minor.patch version in 'build' 
 | `p.dependency(d)`, `p.dependencies([d, ...])` | add dependencies (below) |
 | `p.exports([name, ...])` | functions other packages may call, for a host plugin |
 | `p.capabilities([name, ...])` | capabilities the package asks its host for; recorded in its `.qzmeta` |
+| `p.warning(rule, level)`, `p.warnings([rule, ...], level)` | the level of a warning rule (like `unused-variable`), or of every rule with `"*"`; the last call wins |
 | `p.limits(Limits(...))` | the sandbox budget of `qiln run` and `qiln test` |
 | `p.task(name) -> Task` | the task called `name`, created on first use |
 | `p.option(key, value)` | an option plugin tasks read when their own task has none of that name |
@@ -209,6 +219,12 @@ pub struct Limits {
     memoryMiB: int = 64
     maxDepth: int = 4096
 }
+
+pub enum RuleLevel {   // what the compiler does with the warnings of one rule
+    Ignore
+    Warning
+    Error
+}
 ```
 
 A repository URL is a directory path, a `file://` URL or an `https://` URL; `http://` is refused. A dependency
@@ -224,6 +240,35 @@ notation is a package name and a version range separated by a colon, `org.exampl
 | `*` | any version |
 
 `Limits` accepts fuel from 1 000 to 10^12, memory from 1 to 4096 MiB and a call depth from 16 to 10^6.
+
+### Warning levels
+
+Warnings are reported and do not fail the build. `p.denyWarnings = true` (or `--deny-warnings` for every project)
+turns every warning into an error; `p.warning` sets the level of one rule, and wins over `denyWarnings` whatever the
+order:
+
+```quartz
+fn build(p: Project) {
+    p.denyWarnings = true
+    p.warning("unused-variable", RuleLevel.Warning)
+    p.warnings(["unused-import", "unused-parameter"], RuleLevel.Ignore)
+}
+```
+
+The rules are the compiler's (see [Warnings](tools.md#warnings)); a name it does not know stops the configuration
+with the list of valid ones. When a compilation fails only because of warnings raised to errors, Qiln says how many
+and of which rules:
+
+```console
+$ qiln check
+> :check
+src/main.qz:8:9: error: unused variable 'unused' [unused-variable]
+        let unused = 1
+            ^^^^^^
+:check failed: project : does not compile: 1 warning(s) are errors (unused-variable 1)
+```
+
+A build plugin's `api/` and `src/` are checked with the plugin's own levels.
 
 ### Tasks
 
@@ -278,15 +323,47 @@ uses, so they must be known before any build script is compiled.
 | `test` | run every `@test` function, each in its own sandbox (`--filter text` keeps the names that contain `text`) |
 | `build` | compile and write the artifact to `build/libs/<name>-<version>.qzs` or `.qzb` |
 | `run` | applications only: build, then run the entry function; its `int` result is the exit code |
-| `publish` | build, sign and publish to the project's publish repository (or `--to <dir>`) |
+| `publish` | build, sign and publish to the project's publish repository (or `--to <dir or URL>`) |
 | `clean` | delete the project's `build/` directory |
 
-Tasks run in dependency order, one after another, each at most once per invocation.
+Tasks run in dependency order, each at most once per invocation, independent ones in parallel, and a task whose
+inputs did not change since it last succeeded is skipped (below).
 
 `run` and `test` give programs the same interface as `quartz run`: `print`, `n.ticks` for `wait`, and the log sink
 on standard error. A project with `p.hostOnly = true` gets only its declared host interfaces; the functions of those
 interfaces are linked to stubs that fail with their name when called, so tests of code that does not call them pass
 outside the real host.
+
+## Up-to-date checks
+
+A task that succeeds writes a stamp to `<project>/build/.qiln/<task>.stamp`: a BLAKE2b fingerprint of everything it
+used and of what it wrote. On the next run, a task whose fingerprint still matches is skipped:
+
+```console
+$ qiln test
+> :core:test UP-TO-DATE
+> :greeter:test UP-TO-DATE
+> :app:test UP-TO-DATE
+```
+
+| Task | Its fingerprint |
+|---|---|
+| `check`, `test`, `build` | every source compiled in (its own, its project dependencies' and its libraries'), the host interfaces, the checksum of every host plugin it links, the generated `package.toml`, the warning levels and the versions of Qiln and of the core; `test` adds the limits and `--filter`, `build` its artifact |
+| a plugin task | the plugin's sources, the task's options, the project's name, version and sources, and every file the action read or wrote (see [Writing a Qiln plugin](qiln-plugins.md#up-to-date)) |
+| `run`, `publish`, `clean` | never up to date |
+
+Changing a source of `:core` runs again the tasks of `:core` and of every project that compiles it in. The stamps live
+in `build/`, so `qiln clean` makes every task of the project run again, `check` and `test` included. `--rerun`
+ignores the stamps for one invocation. On the shop, a run with everything up to date spends about 4.3 million
+instructions, against 30 million to run it all again.
+
+## Parallel tasks
+
+Independent tasks run at once on a pool of workers: `-j N` sets how many (1 to 256), and the default is one per
+hardware thread. Each task's output is held back and printed in the order of the plan, so the output is the same
+with `-j 1` and `-j 8`. `clean` keeps its place among the tasks of its project and `run` runs alone, since it owns the
+terminal. After a failure no new task starts, and every failure is reported in order. On the shop, a full
+`check test build bundle` drops from 8.0 ms with `-j 1` to 5.3 ms with the default.
 
 ## Dependencies
 
@@ -299,9 +376,9 @@ p.dependencies([implementation("org.example.text:^0.1")])
 
 ```console
 $ qiln run
-> :build
 locked org.example.text 0.1.0 (library)
-  wrote build/libs/app2-0.1.0.qzb (1012 bytes)
+> :build
+  wrote build/libs/app2-0.1.0.qzb (1059 bytes)
 > :run
 Hello, repository!
 $ qiln deps
@@ -334,17 +411,48 @@ changing the lock. A version signed by a different key than earlier versions of 
 
 ```console
 $ qiln deps --update
-org.example.text 0.3.0 is signed by key ffde89d4d1b2147db7caaa7b9d3ddb0acb34ac006e2f28fcff3e1dd1f8e8559c, not by 42e96ccad2af7b98a559d460dc31800f875d522a3e3d961e9124f05ebd340c12 which signed it before; if the publisher really changed keys, run again with --allow-key-change
+org.example.text 0.3.0 is signed by key e2bed7fb56e5116729a44e81574d8c7f84ae1431ef3a2a14ccc60ef0cc9d2776, not by 6a3d5972c4aa470a962122b2c1be1e1c033f2d9ba19a8596bcf1feede4314df3 which signed it before; if the publisher really changed keys, run again with --allow-key-change
 ```
 
 The resolution rules, the lock file and the trust model are described in
 [Repository format](registry-format.md#resolution).
 
+### Adding dependencies
+
+`qiln add` and `qiln remove` edit `build.qz` in place and update `qiln.lock`, from the directory of the project:
+
+```console
+$ qiln add org.example.text@^0.1
+locked org.example.text 0.1.0 (library)
+added org.example.text:^0.1 in build.qz
+$ qiln add org.example.text@~0.2 --test
+locked org.example.text 0.2.0 (library), was 0.1.0
+changed to org.example.text:~0.2 (test) in build.qz
+$ qiln remove org.example.text
+removed org.example.text from build.qz
+```
+
+| Command | |
+|---|---|
+| `qiln add <package>[@range]` | add an `implementation` dependency; without a range, `^` the newest version the project's repositories have |
+| `qiln add :<project>` | add a `project(":core")` dependency |
+| `--test` | as a `testImplementation` |
+| `qiln remove <package>` or `qiln remove :<project>` | remove it |
+
+The edit touches only the dependency: a package that is already listed gets its range or configuration changed in
+place; otherwise the element goes at the end of the `p.dependencies([...])` list, with the indentation of the others,
+or below the last `p.dependency(...)` call, or in a new `p.dependencies([...])` block at the end of `fn build`. Removing
+deletes the element and its comma, its line when it stood alone, and the whole call when it was the only one.
+Before writing, Qiln runs the edited script and checks that the project gained (or lost) the dependency, so a
+dependency declared inside an `if` is refused; if resolving the new lock fails, `build.qz` is left as it was.
+
 ## Publishing
+
+`qiln publish` publishes to the repository `p.publishTo` names, or to `--to <dir or URL>`:
 
 ```console
 $ qiln keygen
-wrote ~/.qiln/signing.key; public key 42e96ccad2af7b98a559d460dc31800f875d522a3e3d961e9124f05ebd340c12
+wrote ~/.qiln/signing.key; public key 6a3d5972c4aa470a962122b2c1be1e1c033f2d9ba19a8596bcf1feede4314df3
 $ qiln publish --to ../repo
 > :build
   wrote build/libs/text-0.1.0.qzs (150 bytes)
@@ -356,9 +464,54 @@ $ qiln publish --to ../repo
 public key. `publish` signs with `--sign <file>`, else `$QILN_SIGNING_KEY`, else `~/.qiln/signing.key`. Host plugins
 and applications are signed twice: the `.qzb` module itself, and the `.qzmeta` that describes it.
 
-A published version never changes: publishing it again is an error, so fixes go into a new version. Publishing
-writes to a directory; to publish to a web repository, publish to a directory and upload its files with any Maven
-tool, or sync the directory to the server.
+A published version never changes: publishing it again is an error, so fixes go into a new version.
+
+### Publishing over HTTPS
+
+To an `https://` repository (Nexus, Artifactory, GitHub Packages), Qiln uploads with HTTP PUT: first
+it reads the package's `maven-metadata.xml` and checks that the version is not there, then it uploads the archive, the
+`.qzmeta`, the `.pom` and their `.sha256` and `.sha512` with `If-None-Match: *`, so a file that already exists is
+never overwritten, and the updated `maven-metadata.xml` last. The credentials come from `~/.qiln/credentials.toml`:
+
+```toml
+[company]
+url = "https://repo.example.org/quartz"
+username = "ada"
+password = 'p@ss"word'
+```
+
+Each section has a `url` and either `username` and `password` (HTTP Basic) or `token` (a Bearer token); literal
+strings in single quotes keep quotes and backslashes as they are. A repository uses the section whose `url` is the
+longest prefix of its own URL, never one picked by name, because `build.qz` chooses both the name and the URL of its
+repositories. The same file serves downloads from private repositories. For CI, `$QILN_PUBLISH_USERNAME` and
+`$QILN_PUBLISH_PASSWORD`, or `$QILN_PUBLISH_TOKEN`, take precedence, and only for the upload of `qiln publish`.
+Credentials reach `curl` through a private configuration file, never on its command line.
+
+A server that refuses the credentials gets a hint, and plain `http://` is refused except to a test server on the same
+machine with `--allow-insecure-localhost`:
+
+```console
+$ qiln publish --to http://127.0.0.1:8765/releases
+> :build UP-TO-DATE
+> :publish
+:publish failed: repository 'http://127.0.0.1:8765/releases': plain http is refused, use https:// (or --allow-insecure-localhost for a test server)
+$ qiln publish --to http://127.0.0.1:8765/releases --allow-insecure-localhost
+> :build UP-TO-DATE
+> :publish
+:publish failed: http://127.0.0.1:8765/releases refused http://127.0.0.1:8765/releases/org/example/bundle/1.0.0/bundle-1.0.0.qzs (HTTP 401); add credentials for http://127.0.0.1:8765/releases in ~/.qiln/credentials.toml or $QILN_PUBLISH_USERNAME and $QILN_PUBLISH_PASSWORD (or $QILN_PUBLISH_TOKEN)
+```
+
+With a `[local-test]` section for that URL in `credentials.toml`:
+
+```console
+$ qiln publish --to http://127.0.0.1:8765/releases --allow-insecure-localhost
+> :build UP-TO-DATE
+> :publish
+  published org.example.bundle 1.0.0 (build-plugin, 1515 bytes, blake2b 44748f174de3bfdf) to http://127.0.0.1:8765/releases
+```
+
+Two publications of the same package at the same moment can lose one entry of `maven-metadata.xml`, as with
+`mvn deploy`. An upload cut halfway leaves files that `If-None-Match` will not overwrite; delete them on the server.
 
 ## Commands and options
 
@@ -369,6 +522,8 @@ tool, or sync the directory to the server.
 | `qiln init [dir] [--kind ...] [--group ...]` | a new project with a test |
 | `qiln tasks` | the tasks of each project, with their group, description and plugin |
 | `qiln deps [--update]` | the dependency trees, resolving first if needed |
+| `qiln add <package>[@range]`, `qiln add :<project>` | add a dependency to `build.qz` and update `qiln.lock` (see [Adding dependencies](#adding-dependencies)) |
+| `qiln remove <package>`, `qiln remove :<project>` | remove one |
 | `qiln keygen [file]` | an Ed25519 signing key |
 | `qiln version`, `qiln help` | |
 
@@ -376,10 +531,14 @@ tool, or sync the directory to the server.
 |---|---|
 | `-p <dir>`, `--project-dir <dir>` | work in `dir` instead of the current directory |
 | `-P key=value` | a property scripts read with `p.property("key")` or `s.property("key")` |
+| `-j <n>`, `--jobs <n>` | run up to `n` tasks at once (1 to 256); one per hardware thread by default |
+| `--rerun` | run every task, ignoring the up-to-date checks |
 | `--filter <text>` | `test`: only the tests whose name contains `text` |
-| `--to <dir>` | `publish`: publish to this directory instead of the project's publish repository |
+| `--to <dir or URL>` | `publish`: publish there instead of the project's publish repository |
 | `--sign <file>` | `publish`: the signing seed |
-| `--deny-warnings` | compiler warnings fail the build, in every project |
+| `--allow-insecure-localhost` | allow plain `http://` to `127.0.0.1`, `[::1]` or `localhost`, for test servers |
+| `--test` | `add`: as a test dependency |
+| `--deny-warnings` | compiler warnings fail the build, in every project (rules a project sets with `p.warning` keep their level) |
 | `--update` | resolve to the newest versions the ranges accept |
 | `--locked` | fail when `qiln.lock` would change |
 | `--allow-key-change` | accept a package version signed by a new key, and pin the new key |
@@ -405,24 +564,46 @@ When every input still hashes the same, no script is compiled or run. On the sho
 $ qiln :app:run
 [app/build.qz] configuring :app for dev
 > :app:build
-  wrote app/build/libs/app-1.0.0.qzb (1332 bytes)
+  wrote app/build/libs/app-1.0.0.qzb (1438 bytes)
 > :app:run
 Welcome to the shop, Ada!
 Today's special costs 4.99 EUR
 $ qiln :app:run
-> :app:build
-  wrote app/build/libs/app-1.0.0.qzb (1332 bytes)
+> :app:build UP-TO-DATE
 > :app:run
 Welcome to the shop, Ada!
 Today's special costs 4.99 EUR
 $ qiln :app:run -P profile=release
 [app/build.qz] configuring :app for release
-...
+> :app:build UP-TO-DATE
+> :app:run
+Welcome to the shop, Ada!
+Today's special costs 4.99 EUR
 ```
 
 (Here `app/build.qz` has `let profile = p.property("profile") ?? "dev"` and `log("configuring {p.path} for
 {profile}")`.) `--no-cache` evaluates the scripts anyway. The cache needs no invalidation by hand: it can be deleted
-at any time.
+at any time. A plugin included from source keeps its evaluated `build.qz` in the cache too, so an up-to-date run does
+not compile it again.
+
+## Editors
+
+Every configuration (and a cached one when the files are missing) writes the interfaces the build scripts compile
+against to `.qiln/api/` at the workspace root, rewriting a file only when its text changed:
+
+```
+.qiln/api/qiln.qzi                                the build interface
+.qiln/api/qiln.qz                                 its prelude (Repository, Dependency, Limits...)
+.qiln/api/task.qzi                                what a plugin's task actions see
+.qiln/api/plugins/org.example.bundle/bundle.qz    the api/ of every plugin settings.qz requests
+```
+
+`quartz-lsp` reads them: a file named `build.qz` or `settings.qz` with a `.qiln/api/qiln.qzi` in its directory or one
+above it is analysed on its own, as Qiln compiles it, together with every `.qz` and `.qzi` under that `.qiln/api/` and
+without the `print` of the command line runner. Errors show as you type, hover shows the `///` comments of the build
+API and of the plugins, completion offers their members, and go to definition opens the file in `.qiln/api/`. Other
+files in a project directory are analysed as usual. Run any `qiln` command once (`qiln tasks` is enough) after cloning
+a project or adding a plugin; the language server picks the files up on the next edit.
 
 ## Walkthrough: the shop
 
@@ -526,13 +707,13 @@ $ qiln test
   no tests
 $ qiln bundle
 > :greeter:build
-  wrote greeter/build/libs/greeter-1.0.0.qzb (1361 bytes)
+  wrote greeter/build/libs/greeter-1.0.0.qzb (1467 bytes)
 > :greeter:bundle
   [bundle] greeter 1.0.0 by Ada
-  wrote build/distributions/greeter-1.0.0.bundle (1445 bytes)
+  [bundle] wrote build/distributions/greeter-1.0.0.bundle (1514 bytes)
 $ qiln :app:run
 > :app:build
-  wrote app/build/libs/app-1.0.0.qzb (1332 bytes)
+  wrote app/build/libs/app-1.0.0.qzb (1438 bytes)
 > :app:run
 Welcome to the shop, Ada!
 Today's special costs 4.99 EUR
@@ -550,6 +731,40 @@ build plugins
 The greeter's tests pass outside its server: `broadcast`, from `server.qzi`, is linked to a stub that would fail if a
 test called it.
 
+Nothing changed since, so a second run skips every task; after an edit to `core/src/core.qz`, the tasks of `:core`
+run again, and so do those of `:greeter` and `:app`, which compile `:core` in:
+
+```console
+$ qiln test
+> :core:test UP-TO-DATE
+> :greeter:test UP-TO-DATE
+> :app:test UP-TO-DATE
+$ qiln bundle
+> :greeter:build UP-TO-DATE
+> :greeter:bundle UP-TO-DATE
+$ echo "// rounding is by cents" >> core/src/core.qz
+$ qiln test
+> :core:test
+  ok      showsCents (0.0 ms)
+  1 passed, 0 failed
+> :greeter:test
+  ok      greetsByName (0.0 ms)
+  1 passed, 0 failed
+> :app:test
+  no tests
+```
+
+The configuration also wrote the build interface and the plugin's API to `.qiln/api/`, where the language server
+finds them (see [Editors](#editors)):
+
+```console
+$ find .qiln/api -type f | sort
+.qiln/api/plugins/org.example.bundle/bundle.qz
+.qiln/api/qiln.qz
+.qiln/api/qiln.qzi
+.qiln/api/task.qzi
+```
+
 Next, publish the plugin and use it from a repository instead of its sources:
 
 ```console
@@ -560,12 +775,12 @@ $ qiln test
   ok      reportsEveryProblem (0.0 ms)
   2 passed, 0 failed
 $ qiln keygen
-wrote ~/.qiln/signing.key; public key 42e96ccad2af7b98a559d460dc31800f875d522a3e3d961e9124f05ebd340c12
+wrote ~/.qiln/signing.key; public key 6a3d5972c4aa470a962122b2c1be1e1c033f2d9ba19a8596bcf1feede4314df3
 $ qiln publish
 > :build
   wrote build/libs/bundle-1.0.0.qzs (1515 bytes)
 > :publish
-  published org.example.bundle 1.0.0 (build-plugin, 1515 bytes, blake2b ccd322be68b7ddf7) to ../repo
+  published org.example.bundle 1.0.0 (build-plugin, 1515 bytes, blake2b 44748f174de3bfdf) to ../repo
 ```
 
 In `shop/settings.qz`, replace `s.includePlugin("../bundle")` with
@@ -576,10 +791,10 @@ $ cd ../shop
 $ qiln bundle
 locked org.example.bundle 1.0.0 (build-plugin)
 > :greeter:build
-  wrote greeter/build/libs/greeter-1.0.0.qzb (1361 bytes)
+  wrote greeter/build/libs/greeter-1.0.0.qzb (1467 bytes)
 > :greeter:bundle
   [bundle] greeter 1.0.0 by Ada
-  wrote build/distributions/greeter-1.0.0.bundle (1445 bytes)
+  [bundle] wrote build/distributions/greeter-1.0.0.bundle (1514 bytes)
 $ qiln deps
 ...
 build plugins
@@ -607,8 +822,8 @@ name = "org.example.bundle"
 version = "1.0.0"
 kind = "build-plugin"
 dependencies = []
-checksum = "ccd322be68b7ddf7c16b867ae81b5880b202e1dd74c17585281f0db3df30b167"
-key = "42e96ccad2af7b98a559d460dc31800f875d522a3e3d961e9124f05ebd340c12"
+checksum = "44748f174de3bfdf8786447447ac20af2a8deb654077e6132dec6f87b98fbfff"
+key = "6a3d5972c4aa470a962122b2c1be1e1c033f2d9ba19a8596bcf1feede4314df3"
 ```
 
 ## Files
@@ -616,9 +831,12 @@ key = "42e96ccad2af7b98a559d460dc31800f875d522a3e3d961e9124f05ebd340c12"
 | Path | Written by | |
 |---|---|---|
 | `<project>/build/` | tasks | artifacts in `build/libs`, and whatever plugin tasks write; `qiln clean` deletes it |
+| `<project>/build/.qiln/<task>.stamp` | tasks | the fingerprint of each task's last successful run (see [Up-to-date checks](#up-to-date-checks)) |
 | `.qiln/configuration.bin` | configuration | the [configuration cache](#the-configuration-cache), at the workspace root |
+| `.qiln/api/` | configuration | the build interface and the plugins' APIs, for [editors](#editors) |
 | `qiln.lock` | resolution | the exact packages and plugins the workspace builds with; commit it |
 | `~/.qiln/signing.key` | `qiln keygen` | the default signing seed |
+| `~/.qiln/credentials.toml` | you | repository credentials, matched by URL prefix (see [Publishing over HTTPS](#publishing-over-https)) |
 | `~/.qiln/cache/meta/` | resolution | verified `.qzmeta` files, checked again when read |
 | `~/.qiln/cache/artifacts/` | builds | downloaded archives, named by their BLAKE2b hash |
 
