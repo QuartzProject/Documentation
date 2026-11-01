@@ -8,7 +8,10 @@ The first version: the whole language of the current specification, both executi
   interpolation and formats, multi-line strings in triple quotes and raw strings (`r"..."`, `r#"..."#`); structs,
   enums with data (recursive ones included) and exhaustive `match`; patterns that nest, with guards, ranges and
   alternatives (`A | B`), also in `let`, `is`, `if let` and `while let`; null safety with `??` (also `?? return`,
-  `?? break` and `?? continue`), `?.`, comparison with `null` on any nullable and narrowing after a `null` arm;
+  `?? break` and `?? continue`), `?.`, comparison with `null`, `is null` and `null` arms on any nullable (handles,
+  floats, lists and maps included) and narrowing after a `null` arm; `let` that takes apart an enum with one variant;
+  generic variants that take their type from sibling arguments (`Opt.Some(1, Opt.None)`); map keys that are lists or
+  recursive enums, compared by content;
   `Result` and `?`, with `Ok` and `Err` inferred from sibling branches and `Result<(), E>` for results without a value;
   generics with traits and `@derive(Eq, Hash, Ord, Show)`; iterators; functions as values and lambdas; fixed-size
   arrays `[T; N]`; `value with { field = x }` updates; constants evaluated at compile time; functions of a type called
@@ -18,11 +21,17 @@ The first version: the whole language of the current specification, both executi
   `@awaitable`, `@repr(C)`) and for tools (`@test`, `@deprecated`, `@inline`, `@noinline`).
 - **Runtime:** a validated IR as the security boundary; a register interpreter faster than Lua; an optional LLVM tier
   with the same results, tiered in the background, with an on-disk cache; fuel, memory quotas and recursion limits that
-  are always on; arenas instead of a garbage collector; deterministic floats and math.
+  are always on; arenas instead of a garbage collector; deterministic floats and math; values of any depth copied,
+  stored, exported and linked without the native stack, the walk counted against the memory limit, while `==`,
+  `Show` and `Encode` on values thousands of levels deep stop with a stack overflow trap.
 - **Hosts:** a C++ API with typed bindings, a C API and `libquartz`; structured diagnostics with warning levels per
   rule; signed `.qzb` modules; hot reload with state migration; tasks whose results may be any value; packages linked
   across sandboxes with structs, lists and maps copied between them, and generated interfaces that keep parameter
-  names, documentation and defaults; sandboxes on many threads. A trap leaves the `state` as the program left it, and
+  names, documentation and defaults; sandboxes on many threads; `exportState` documents in format 2 (older ones still
+  load). The C API is at level 5: lossy text from outside (`qz_sandbox_str_lossy`, `qz_call_str_lossy`), DEFLATE with
+  raw, zlib and gzip framing and CRC-32 (`qz_deflate`, `qz_inflate`, `qz_crc32`), the `///` documentation of functions,
+  types and members, and `qz_type_variant_boxed` for recursive payloads (see
+  [API level 5](embedding.md#api-level-5)). A trap leaves the `state` as the program left it, and
   the [embedding chapter](embedding.md#traps-and-state) says what hosts do about it.
 - **Library:** `org.quartzlang.data` (JSON, TOML, YAML, and typed decoding and encoding with
   `@derive(Decode, Encode)`), `collections` (sets, sorted maps and sets, priority queues, deques, LRU caches, bit
@@ -58,16 +67,14 @@ The first version: the whole language of the current specification, both executi
 Each of these is either a change that would break programs or hosts later, or something a stable release needs:
 
 1. **Language surface frozen:** the open corners closed before stability is promised: methods and patterns on
-   fixed-size arrays, functions of a type used as values, `is null` on nullable handles, and recursive types beyond
-   enums (`Hash` on recursive enums, structs that hold a nullable of themselves).
+   fixed-size arrays and functions of a type used as values. A struct that holds a nullable of itself stays an error,
+   since an enum covers the case with the same memory.
 2. **Standard library shape:** the names of the essential library and of the packages beyond it (typed configuration,
    `Decimal`, `Duration`, cryptography, collections), fixed so that they will not change.
-3. **Deep values:** copying a value nested hundreds of thousands of levels deep between a call, a task and the `state`
-   must not exhaust the native stack.
-4. **Binary module format:** a runtime that loads every older minor version of the same major version.
-5. **C interface:** the JVM and Kotlin bindings brought up to its current level (structured diagnostics, exports, task
+3. **Binary module format:** a runtime that loads every older minor version of the same major version.
+4. **C interface:** the JVM and Kotlin bindings brought up to its current level (structured diagnostics, exports, task
    results), reviewed once more, then frozen at `QZ_ABI_VERSION` 1 for all of 1.x.
-6. **Package repository:** the public repository at repo.quartzlang.org, with namespace verification.
-7. **Verified platforms:** macOS and FreeBSD tested in CI like the others.
+5. **Package repository:** the public repository at repo.quartzlang.org, with namespace verification.
+6. **Verified platforms:** macOS and FreeBSD tested in CI like the others.
 
 After 1.0 the language, the C interface and the module format follow semantic versioning.

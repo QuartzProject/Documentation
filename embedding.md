@@ -58,7 +58,7 @@ int main() {
 
 Link it with the `quartz` library target. The program prints
 `Welcome, Ada! 12 players online, greeting 1`, and `sandbox.exportState()` then returns
-`{"states":{"Stats":{"version":0,"fields":{"greetings":1}}},"handles":{}}`.
+`{"format":2,"states":{"Stats":{"version":0,"fields":{"greetings":1}}},"handles":{}}`.
 
 `out.diagnostics` is the rendered text of the errors and warnings; `out.messages` has each one with its severity,
 [rule](tools.md#warnings), file and range, for a host that shows them its own way. `CompileOptions::rules` sets the
@@ -112,6 +112,9 @@ impl int {
 | `tier` | default | interpreter, automatic tiering or native from the start |
 
 A trap aborts only the current call or task. The sandbox stays usable, and nothing a program does can crash the host.
+That includes values nested a million levels deep: copying them into the `state`, between tasks or into a linked
+package, and exporting or importing the state, walk them without the native stack, and what the walk needs counts
+against `memoryBytes` (a value too deep for what is left traps with "value nested too deeply for the memory limit").
 `setFuelPerCall` changes the budget at any time, for example to follow a wall-clock budget per tick.
 
 ### Traps and `state`
@@ -202,7 +205,9 @@ if (t && t->kind == quartz::vm::TaskOutcome::Kind::Done) {
 
 ## Persistence and reload
 
-- `exportState()` and `importState(json)` save and restore every `state`, with field names and versions.
+- `exportState()` and `importState(json)` save and restore every `state`, with field names and versions. The
+  document says `"format":2`, in which a recursive enum payload is written as the value it holds; documents without a
+  format, or with `"format":1`, where such a payload was a list of one element, still load.
 - `reload(newProgram)` builds a sandbox for a new version of the program with the same bindings and limits and the state
   migrated; on failure the old sandbox keeps running.
 - `@persist(per = Player)` states have one instance per handle: `exportHandle`, `importHandle` and `dropHandle` save
@@ -299,6 +304,63 @@ Host functions receive a `qz_call*`: `qz_call_args`, `qz_call_set_result`, `qz_c
 and returns the diagnostics one by one: `qz_diagnostics_count`, then `qz_diagnostic_severity`, `qz_diagnostic_rule`,
 `qz_diagnostic_file`, `qz_diagnostic_message` and `qz_diagnostic_range` for each, and `qz_diagnostics_free` at the
 end. `qz_warning_rule_count` and `qz_warning_rule` list the rules the library knows.
+
+### API level 5
+
+`qz_api_level()` says which functions the library has (`QZ_API_LEVEL` in the header it was built from); a host that
+needs the ones below checks for 5 before looking them up.
+
+**Text from outside.** Process output, HTTP headers and file names are not always UTF-8, and `qz_sandbox_str` and
+`qz_call_str` refuse such text. `qz_sandbox_str_lossy` and `qz_call_str_lossy` turn each ill-formed sequence into
+U+FFFD, one per maximal subpart as JavaScript, Python and Rust decode, so they never fail for the content: the bytes
+`caf\xC3\xA9 \xFF\xE2\x82 ok` become `café �� ok`. Valid text costs the same as with the strict functions. The
+`_into` forms (`qz_sandbox_str_lossy_into`, `qz_call_str_lossy_into`) write the slot through a pointer, for FFIs that
+cannot take a returned `qz_slot`.
+
+```c
+static bool read_line(qz_call* call, void* user) {
+    char line[512];
+    if (fgets(line, sizeof line, (FILE*)user) == NULL) {
+        line[0] = '\0';
+    }
+    qz_call_set_result(call, qz_call_str_lossy(call, line, strlen(line)));
+    return true;
+}
+```
+
+**Compression.** `qz_deflate`, `qz_inflate` and `qz_crc32` are the code behind `org.quartzlang.compress`, so a host
+that reads and writes archives does not need a zlib of its own. `qz_framing` picks raw DEFLATE (RFC 1951), zlib
+(RFC 1950) or gzip (RFC 1952). `qz_deflate` takes a level from 0 (store) to 9 and returns `NULL` only without memory;
+`qz_inflate` stops at `max_length` bytes of output and returns `NULL` with a message on a bad header, damaged data, a
+checksum mismatch or more output than allowed. `qz_crc32` is the CRC-32 of zip and gzip, and continues over more data
+when given the previous result. Buffers and messages are freed with `qz_free`.
+
+```c
+size_t packed_length = 0;
+uint8_t* packed = qz_deflate(data, length, 6, QZ_FRAMING_GZIP, &packed_length);
+size_t plain_length = 0;
+char* error = NULL;
+uint8_t* plain = qz_inflate(packed, packed_length, QZ_FRAMING_GZIP, 16 << 20, &plain_length, &error);
+if (plain == NULL) {
+    fprintf(stderr, "%s\n", error);
+    qz_free(error);
+}
+uint32_t crc = qz_crc32(0, data, half);
+crc = qz_crc32(crc, data + half, length - half);   /* the same as qz_crc32(0, data, length) */
+qz_free(packed);
+qz_free(plain);
+```
+
+**Documentation.** `qz_program_function_doc(program, function)`, `qz_type_doc(program, type)` and
+`qz_type_member_doc(program, type, index)` (a field of a struct or a variant of an enum) give the `///` text the
+generated interfaces carry, or `""` when there is none. The strings live as long as the program. A host that builds
+facades or help pages from a program shows them without parsing its sources.
+
+**Recursive payloads.** A payload of a recursive enum (`Link(int, Chain)`, `Add(Expr, Expr)`) is stored as a list of
+one element, the value itself. `qz_type_variant_boxed(program, type, variant, index)` is true for such a payload; its
+type from `qz_type_variant_payload` is then that list, and `qz_type_elem` of it is the value's type. Read the value
+with `qz_list_get(slot, 0, ...)`, build it with `qz_sandbox_list` and one `qz_list_push`, and show it to users as the
+value, not as a list: the bindings and `exportState` do the same.
 
 ## Threads
 
