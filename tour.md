@@ -162,7 +162,68 @@ fn eval(e: Expr) -> int {
 ```
 
 `eval(Expr.Add(Expr.Num(2), Expr.Neg(Expr.Num(5))))` is `-3`. A struct cannot contain itself by value, since it would
-have no end: keep the children in a list or a map, or make the type an enum. A recursive enum cannot derive `Hash`.
+have no end: keep the children in a list or a map, or make the type an enum. Recursive enums derive `Eq`, `Hash`, `Ord`
+and `Show` like any other, so they can be map keys.
+
+A generic variant takes its type arguments from what it carries, and a variant that carries nothing, such as `None`
+below, takes them from its siblings in the same call:
+
+```quartz
+enum Opt<T> {
+    Some(T, Opt<T>)
+    None
+}
+
+fn count<T>(o: Opt<T>) -> int {
+    return match o {
+        Some(_, rest) => 1 + count(rest)
+        None => 0
+    }
+}
+
+fn main() {
+    let one = Opt.Some(1, Opt.None)
+    let words = Opt.Some("a", Opt.Some("b", Opt.None))
+    print("{count(one)} {count(words)}")     // 1 2
+}
+```
+
+Values can be as deep as memory allows. A chain of a million links is copied between calls, tasks and the `state`,
+exported with the state and passed to a linked package without running out of native stack: the runtime walks such
+values with a stack of its own, and what that walk needs beyond a small fixed part counts against the sandbox's memory
+limit (a value too deep for it traps with "value nested too deeply for the memory limit"). Code that recurses is a
+different matter: `==`, `Show` and `Encode` derived for a recursive enum are ordinary Quartz functions, so on a value
+thousands of levels deep they stop with a `stack overflow` trap, like any function that recurses past the depth limit.
+Walk such values with a loop:
+
+```quartz
+enum Chain {
+    Link(int, Chain)
+    End
+}
+
+fn build(n: int) -> Chain {
+    var c = Chain.End
+    for i in 0..n {
+        c = Chain.Link(i, c)
+    }
+    return c
+}
+
+fn length(c: Chain) -> int {
+    var n = 0
+    var cur = c
+    while cur is Link(_, rest) {
+        n += 1
+        cur = rest
+    }
+    return n
+}
+
+fn main() {
+    print("{length(build(200000))}")     // 200000
+}
+```
 
 Patterns nest, and also take apart tuples and structs (`Point(x, y)`, in field order); literals, ranges such as
 `1..=9` and `null` fit anywhere inside, and an arm can add a guard with `if`. The compiler checks the whole tree, so
@@ -193,7 +254,22 @@ fn label(n: int?) -> str {
 }
 ```
 
-`let (a, b) = pair` and `let Point(x, y) = p` destructure where the pattern cannot fail. `value is Pattern` tests a
+`let (a, b) = pair` and `let Point(x, y) = p` destructure where the pattern cannot fail, and so does an enum with a
+single variant, the usual way to give a number a unit:
+
+```quartz
+enum Meters {
+    Meters(float)
+}
+
+fn main() {
+    let d = Meters.Meters(2.5)
+    let Meters(m) = d
+    print("{m * 2.0}")     // 5.0
+}
+```
+
+`value is Pattern` tests a
 pattern anywhere, and in an `if` or `while` condition (alone or joined with `&&`) its names are bound inside the
 block: `if s is Circle(r) && r > 1.0 { ... }`, `while tokens[i] is Num(n) { ... }`.
 
@@ -222,7 +298,25 @@ fn firstKnown(ids: [int]) -> str {
 - `findUser(1)?.len()` is `null` when the user is missing, otherwise the length.
 - `if let user = findUser(1) { ... }` runs the block with the value when there is one, and
   `while let top = stack.pop() { ... }` repeats it while there is one.
-- `x == null` and `x != null` work on any nullable, even when its type has no `Eq`.
+- `x == null` and `x != null` work on any nullable, even when its type has no `Eq`, and so do `x is null` and a `null`
+  arm in a `match`: on handles, floats, lists and maps as on everything else.
+
+```quartz
+fn describe(xs: [int]?, ratio: float?) -> str {
+    if xs is null {
+        return "no list"
+    }
+    let items = xs ?? []
+    return match ratio {
+        null => "{items.len()} items, no ratio"
+        r => "{items.len()} items at {r}"
+    }
+}
+```
+
+`describe(null, 0.5)` is `"no list"`, `describe([1, 2], null)` is `"2 items, no ratio"` and `describe([1, 2, 3], 1.5)`
+is `"3 items at 1.5"`. With `fn findPlayer(name: str) -> Player?` in a host interface, `findPlayer("ada") is null`
+tests the handle the same way.
 
 ## Errors
 
@@ -279,7 +373,28 @@ let three = scores.get("ada") ?? 0
 Lists have `len`, `push`, `pop`, `clear` and indexing (out of range is a trap); lists of `str` have `join`, and lists
 of any type with `Ord` (your own included) have `sort`, `sorted` (a sorted copy), `min` and `max`. Maps have
 `len`, `get` (which returns `V?`), `set`, `has`, `remove`, `keys`, `values` and indexing. Keys are integers, `bool`,
-`char`, `str`, handles, tuples of them, or structs and enums that derive `Eq` and `Hash`.
+`char`, `str`, handles, lists and tuples of them, or structs and enums that derive `Eq` and `Hash`, recursive enums
+included. Keys are compared by content, so a list built elsewhere finds the entry:
+
+```quartz
+@derive(Eq, Hash)
+enum Path {
+    End
+    Step(str, Path)
+}
+
+fn main() {
+    let routes: Map<[str], int> = Map()
+    routes[["home", "docs"]] = 1
+    let key = ["home"]
+    key.push("docs")
+    print("{routes.get(key) ?? 0}")     // 1
+
+    let seen: Map<Path, bool> = Map()
+    seen[Path.Step("a", Path.Step("b", Path.End))] = true
+    print("{seen.has(Path.Step("a", Path.End))}")     // false
+}
+```
 
 ```quartz
 for k, v in scores {    // insertion order, the same in every run

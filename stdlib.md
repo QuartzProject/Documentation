@@ -14,7 +14,7 @@ both execution tiers.
 | `float` | `sqrt()`, `floor()`, `ceil()`, `round()`, `abs()`, `sin()`, `cos()`, `tan()`, `asin()`, `acos()`, `atan()`, `exp()`, `log()`, `log10()`, `clamp(lo, hi)` |
 | `[T]` | `len()`, `push(v)`, `pop() -> T?`, `clear()`, `xs[i]`, `insert(i, v)`, `removeAt(i) -> T`, `insertAll(i, other)`, `reverse()`, `slice(a, b)`; for numbers, `bool`, `char` and `str` also `contains(v)`, `indexOf(v) -> int?`; for any element with `Ord` `sort()`, `sorted()` (a sorted copy), `min() -> T?`, `max() -> T?`; `[str]` has `join(separator)` |
 | `[T]` with functions | `map(f)`, `filter(keep)`, `any(test)`, `all(test)`, `find(test) -> T?`, `indexWhere(test) -> int?`, `sortBy(key)`, `sortWith(cmp)` |
-| `Map<K, V>` | `len()`, `get(k) -> V?`, `set(k, v)`, `has(k)`, `remove(k)`, `m[k]` |
+| `Map<K, V>` | `len()`, `get(k) -> V?`, `set(k, v)`, `has(k)`, `remove(k)`, `m[k]`; keys are compared by content, lists and recursive enums included ([keys](tour.md#lists-and-maps)) |
 | `Result<T, E>` | `isOk()`, `isErr()`, `unwrap()`, `unwrapOr(fallback)`, `?` |
 | `T?` | `unwrap()`, `unwrapOr(fallback)`, `??`, `?.`, `if let` |
 
@@ -150,6 +150,11 @@ the field's default, or `null` for a nullable field, and is an error otherwise. 
 order and leaves null ones out. An enum variant without payload is its name as a string (matched exactly, or else
 ignoring ASCII case); one with a payload is a table with its name as the only key, holding the payload, or a list when
 there are several: `mode = { Custom = [3, "x"] }`.
+
+Text formats have depth limits: the JSON and MessagePack readers give an error past 256 levels of nesting, and
+`encodeJson` traps on a deeper tree (a variant with several values takes two levels, its table and its list). A derived
+`Encode` on a recursive enum thousands of levels deep traps with `stack overflow` on its own (see
+[deep values](tour.md#enums-and-match)).
 
 `DecodeError` has `path` (`worlds[1].seed`, with odd keys quoted: `tags["a b"]`), `expected`, `found` and `line` (0
 when unknown), and shows as `line 6: worlds[1].seed: expected int, found str "seven"`. When the text does not parse,
