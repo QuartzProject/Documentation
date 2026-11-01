@@ -11,6 +11,7 @@ for each platform it was built with and loads the right one at run time.
 ## Requirements
 
 - Java 22 or newer, 64-bit (the FFM API is final since 22). Tested with JDK 25.
+- A `libquartz` of C API level 5 or newer; an older one is refused when the bindings load.
 - `libquartz` for the platform: inside the jar, on `java.library.path`, or named with `-Dquartz.library=<file>`.
 - Native access enabled for the bindings, or the JVM prints a warning on first use:
   `--enable-native-access=ALL-UNNAMED` (or `=org.quartzlang.jvm` on the module path). An executable jar can set
@@ -182,6 +183,17 @@ A program describes itself:
   `start()` does not ask for its binding.
 - A `Type` has its `name()` as the source writes it (`Player`, `[int]`, `Map<str, Pt>`), its `packageName()` and
   `qualifiedName()`.
+- The `///` comments come with them: `Export.doc()`, `Type.doc()` for a struct or enum, and `doc()` on each
+  `Type.Field` and `Type.Case` (a field or a variant). Each is empty when nothing was written. Embed uses them to put
+  the Quartz documentation on the classes and methods it generates.
+
+```java
+Export build = program.export("build");
+build.doc();                                        // "Builds a small tree."
+Type tree = build.signature().result();
+tree.doc();                                         // "A binary tree of ints."
+tree.findCase("Node").doc();                        // "Two subtrees."
+```
 
 ## Converting values, handles included
 
@@ -206,6 +218,54 @@ In Kotlin Multiplatform, `QuartzValues.from(value, type, handles)` normalizes a 
 and `QuartzValues.resolveHandles(value, type, handles)` turns the ids of a result back into objects. `@Serializable`
 classes keep handles as `Long` fields. The common API has the same diagnostics, warning levels, introspection
 (`exports`, `attributes`, `Import.required`) and wide task results on every target.
+
+## Recursive enums and map keys
+
+A recursive enum crosses as itself. For `enum Tree { Leaf(int) Node(Tree, Tree) }`, `get()` gives
+`Node(Leaf(1), Node(...))`, the variant's values being `Variant`s again, and a sealed type of records reads it whole:
+
+```java
+sealed interface Tree {
+    record Leaf(long value) implements Tree {}
+    record Node(Tree left, Tree right) implements Tree {}
+}
+
+Tree t = sandbox.call("build").to(Tree.class);
+long sum = sandbox.call("sum", new Tree.Node(new Tree.Leaf(1), new Tree.Leaf(2))).asLong();
+```
+
+The runtime keeps such a payload in a list of one element; the bindings hide that. In the type, `Type.Field.type()`
+is the value's type and `boxed()` is true, with `box()` the list type the slot holds. Kotlin sealed classes and
+`@Serializable` sealed classes in Kotlin Multiplatform work the same way.
+
+Map keys can be lists and recursive enums, compared by content. A `Map<[int], str>` reads as a Java map keyed by
+`List<Long>`, a `Map<Tree, int>` by `Variant`, and either can be passed back built from Java lists, records or
+variants.
+
+## Text from outside
+
+A `str` must be valid UTF-8, and a `String` always converts to it. Bytes from a process, a socket or a header may not
+be: `LossyText` passes them where a `str` goes, each ill-formed sequence becoming U+FFFD (one per maximal subpart, as
+JavaScript, Python and Rust decode), so the call never fails for the content. It works at any depth, in a list or a
+field as well as a whole result.
+
+```java
+sandbox.bind("readOutput", call -> call.stringLossy(output));            // a str result
+sandbox.bind("lines", call -> List.of(new LossyText(first), "done"));    // inside a [str]
+Value text = sandbox.strLossy(bytes);                                     // an argument, until the next call
+sandbox.call("show", text);
+```
+
+In Kotlin Multiplatform: `call.stringLossy(bytes)`, `LossyText(bytes)` and `sandbox.strLossy(bytes)`.
+
+## Compression
+
+`Quartz.deflate(data, level, framing)`, `Quartz.inflate(data, framing, maxLength)` and `Quartz.crc32(crc, data)` run
+the DEFLATE code of the standard library: `Framing.RAW`, `ZLIB` or `GZIP`, levels 0 (stored) to 9, and an inflate
+that throws `QuartzException` on damaged data, a checksum mismatch or more than `maxLength` bytes. CRC-32 is the one
+zip and gzip use, from 0 or continuing a previous result. Kotlin Multiplatform has the same in `Quartz.deflate`,
+`Quartz.inflate` and `Quartz.crc32(data, crc)`, which matters on Kotlin/Native and the web, where there is no
+`java.util.zip`.
 
 ## Task results
 

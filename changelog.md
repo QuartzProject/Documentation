@@ -58,7 +58,9 @@ The first version: the whole language of the current specification, both executi
   API, typed facades, kits of capabilities granted per module, commands and listeners registered from `@command` and
   `@on`, and single-file native executables (see [Embed](embed.md)).
 - **Bindings:** Java and Kotlin over the FFM API, and Kotlin Multiplatform for the JVM, Kotlin/Native, Android,
-  Kotlin/JS and Kotlin/Wasm (see [Quartz on the JVM](jvm.md)).
+  Kotlin/JS and Kotlin/Wasm (see [Quartz on the JVM](jvm.md)), at C API level 5: recursive enum payloads read and
+  taken as the value itself, lists and recursive enums as map keys, lossy text from the host, `///` docs of functions,
+  types, fields and variants, and DEFLATE, zlib, gzip and CRC-32.
 - **Platforms:** Linux x86-64 and arm64, Windows x64, Android, and WebAssembly in Node and browsers (the playground at
   quartzlang.org runs on it); macOS and FreeBSD written but not verified yet.
 
@@ -72,8 +74,7 @@ Each of these is either a change that would break programs or hosts later, or so
 2. **Standard library shape:** the names of the essential library and of the packages beyond it (typed configuration,
    `Decimal`, `Duration`, cryptography, collections), fixed so that they will not change.
 3. **Binary module format:** a runtime that loads every older minor version of the same major version.
-4. **C interface:** the JVM and Kotlin bindings brought up to its current level (structured diagnostics, exports, task
-   results), reviewed once more, then frozen at `QZ_ABI_VERSION` 1 for all of 1.x.
+4. **C interface:** reviewed once more, then frozen at `QZ_ABI_VERSION` 1 for all of 1.x.
 5. **Package repository:** the public repository at repo.quartzlang.org, with namespace verification.
 6. **Verified platforms:** macOS and FreeBSD tested in CI like the others.
 
