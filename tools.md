@@ -72,6 +72,8 @@ takes:
 | `tests` | `true` runs every `@test` function, each in a fresh sandbox, instead of `entry` |
 | `filter` | With `tests`: only the tests whose name contains this text |
 | `stopOnEntry` | Stop at the first line that runs |
+| `tasks` | More `suspend fn`s to start next to the entry, as `quartz run --task` does |
+| `trapFilters` | The trap kinds the *All traps* breakpoint covers |
 
 What it does:
 
@@ -79,19 +81,35 @@ What it does:
   can carry a condition: a variable, a field path or an index (`p.x`, `xs[2]`, `m["key"]`) alone (it must be
   `true`), or compared with `==`, `!=`, `<`, `<=`, `>` or `>=` to a literal or another variable (`i == 3`,
   `total > limit`).
-- **Stepping**: over, into, out of a call, and pause.
+- **Function breakpoints** by short name (`len`), type-qualified (`Point.len`) or fully qualified
+  (`org.example.Point.len`); they stop at the function's first line and can take a condition.
+- **Trap breakpoints**: *All traps* plus one entry per kind (division by zero, panics and failed checks, index out
+  of bounds, null unwrapped, out of fuel, out of memory, stack overflow, invalid handle, host errors, unreachable
+  code). In JetBrains IDEs, tick the kinds in the properties of the **Quartz Traps** breakpoint.
+- **Inline breakpoints**: one arm of a `match`, or one statement, that shares its line with others (Shift+F9 in VS
+  Code).
+- **Stepping**: over, into, out of a call, and pause. Stepping into the standard library shows its source.
 - **Call stack** with the function, file and line of every frame.
 - **Variables**: arguments and locals in scope at the stopped line, with their types. Structs, tuples, lists, maps,
   enums with data, nullables and `state` values expand. Hovering a name (or a path like `p.x`) shows its value.
 - **Traps** stop the program where they happen, with the whole stack and its variables still there; the trap and its
   trace show as the exception. Continuing ends the program as `quartz run` would.
+- **Changing values**: *Set Value* changes numbers, booleans, characters (`'x'`) and text (`"..."`, only in the
+  current frame's locals).
+- **Threads**: each task is a thread in the call stack, and a step stays on the thread you asked for.
 - `print` and the log go to the debug console.
 
 The program runs in the interpreter, compiled with a probe at the start of every line, without the IR optimizer and
 without fused instructions, so every local keeps its own register. A normal build has no probes and pays nothing for
 the debugger. The names of locals and their scopes travel in the line table of a `.qzb` (`--strip-lines` drops both),
-so a module built without `--strip-lines` can be debugged with names. The program is one thread, named after the
-entry function or the test that is running.
+so a module built without `--strip-lines` can be debugged with names; a `.qzb` keeps lines but not columns.
+
+### Tasks and the tick clock
+
+`quartz run` and `quartz test` drive tasks on a virtual clock. `wait 20.ticks` resumes the task 20 ticks later without
+sleeping, and a task that spends its fuel slice resumes on the next tick. `quartz run file.qz --task ticker --task
+saver` starts more `suspend fn`s next to the entry function; they share the program's `state`, and the first trap ends
+the run. A `@test` may be a `suspend fn`; it runs as a task on the same clock.
 
 ## Profiling
 
