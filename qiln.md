@@ -218,6 +218,7 @@ pub struct Limits {
     fuel: int = 100000000
     memoryMiB: int = 64
     maxDepth: int = 4096
+    testTicks: int = 1000000   // the virtual tick a suspend test may reach; 0 is no limit
 }
 
 pub enum RuleLevel {   // what the compiler does with the warnings of one rule
@@ -239,7 +240,7 @@ notation is a package name and a version range separated by a colon, `org.exampl
 | `>=1.1, <2` | every comparison separated by commas must hold |
 | `*` | any version |
 
-`Limits` accepts fuel from 1 000 to 10^12, memory from 1 to 4096 MiB and a call depth from 16 to 10^6.
+`Limits` accepts fuel from 1 000 to 10^12, memory from 1 to 4096 MiB, a call depth from 16 to 10^6 and `testTicks` from 0 (no limit) up.
 
 ### Warning levels
 
@@ -333,6 +334,12 @@ inputs did not change since it last succeeded is skipped (below).
 on standard error. A project with `p.hostOnly = true` gets only its declared host interfaces; the functions of those
 interfaces are linked to stubs that fail with their name when called, so tests of code that does not call them pass
 outside the real host.
+
+A `@test` may be a `suspend fn`. `qiln test` then runs it as a task on a virtual tick clock, the same one `quartz test`
+uses: `wait n.ticks` resumes n ticks later without sleeping, a task that runs out of fuel resumes on the next tick, and
+the first trap fails the test. A suspend test still running when its next resumption would pass `Limits.testTicks` (one
+million ticks by default) fails with `still running after N ticks`; `testTicks = 0` lets it run without a limit, as
+`quartz test` does.
 
 ## Up-to-date checks
 
