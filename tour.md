@@ -297,7 +297,13 @@ fn firstKnown(ids: [int]) -> str {
 - `findUser(2) ?? "nobody"` gives a default, and `?? return`, `?? break` or `?? continue` leave instead.
 - `findUser(1)?.len()` is `null` when the user is missing, otherwise the length.
 - `if let user = findUser(1) { ... }` runs the block with the value when there is one, and
-  `while let top = stack.pop() { ... }` repeats it while there is one.
+  `while let top = stack.pop() { ... }` repeats it while there is one. After `let` you can also write any pattern:
+  `while let Route.Step(_, rest) = r { r = rest }` loops while the value matches, and
+  `if let Circle(r) | Square(r) = shape { ... }` binds `r` in the block. A pattern that can never fail is an error; use
+  a plain `let`.
+- After an `if` whose block always leaves (`return`, `break`, `continue`) and whose condition is `x is null` or
+  `x == null` (possibly joined with `||`), `x` has its non-null type for the rest of the block. This works for `let`
+  bindings and parameters, and for a `var` that is not assigned again in the rest of the block.
 - `x == null` and `x != null` work on any nullable, even when its type has no `Eq`, and so do `x is null` and a `null`
   arm in a `match`: on handles, floats, lists and maps as on everything else.
 
@@ -306,7 +312,7 @@ fn describe(xs: [int]?, ratio: float?) -> str {
     if xs is null {
         return "no list"
     }
-    let items = xs ?? []
+    let items = xs
     return match ratio {
         null => "{items.len()} items, no ratio"
         r => "{items.len()} items at {r}"
